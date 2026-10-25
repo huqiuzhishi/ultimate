@@ -945,15 +945,21 @@ export function createLander(
                 return outcome.value
               })
               const failed = results.findIndex((result) => result.failure !== undefined)
-              if (failed !== -1)
+              if (failed !== -1) {
+                const result = results[failed]
+                if (result.timedOut)
+                  return fail(
+                    `check timed out: ${commands[failed]}`,
+                    result.failure,
+                    'Resolve the timeout, verify and submit again.',
+                  )
                 return handOver(
-                  results[failed].timedOut
-                    ? `check timed out: ${commands[failed]}`
-                    : `check failed twice: ${commands[failed]}`,
-                  results[failed].failure!,
+                  `check failed twice: ${commands[failed]}`,
+                  result.failure!,
                   'Fix it, verify and submit again.',
                   { base, merging: entry.tip },
                 )
+              }
               flaky.push(...commands.filter((_command, member) => results[member].flaky))
             }
             // Only the commit every check ran on lands: nothing may have moved or touched the checkout meanwhile.
