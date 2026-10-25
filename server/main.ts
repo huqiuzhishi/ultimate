@@ -19,6 +19,7 @@ import { homedir } from 'node:os'
 import { realpath } from 'node:fs/promises'
 import { extensionModules } from './vite-extensions.ts'
 import { admit, createAccess } from './request-security.ts'
+import { createUpgrades } from './upgrades.ts'
 import { writeProject } from './project.ts'
 import { reportCore } from './supervisor-protocol.ts'
 import { viteLogger } from './vite-logger.ts'
@@ -59,6 +60,7 @@ export async function prepareServer(options: Partial<ServerOptions> = {}) {
       .catch((error: unknown) => console.error('Publishing access changes failed:', error))
   })
   let api: Awaited<ReturnType<typeof createApi>> | undefined
+  const upgrades = createUpgrades()
   const http = createHttpServer((request, response) => {
     void (async () => {
       const port =
@@ -92,8 +94,8 @@ export async function prepareServer(options: Partial<ServerOptions> = {}) {
       ).port || '80'
     void admit(request, port, access.rules)
       .then((allowed) => {
-        if (allowed) hmr.emit('upgrade', request, socket, head)
-        else socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
+        if (!allowed) socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
+        else if (!upgrades.handle(request, socket, head)) hmr.emit('upgrade', request, socket, head)
       })
       .catch(() => socket.destroy())
   })
@@ -158,6 +160,7 @@ export async function prepareServer(options: Partial<ServerOptions> = {}) {
     () => system?.changed(),
     {
       access,
+      upgrades,
       harness: () => {
         if (!opened) throw new Error('Harness is not open')
         return opened.harness
@@ -213,6 +216,7 @@ export async function prepareServer(options: Partial<ServerOptions> = {}) {
     vite,
     host,
     extensions,
+    upgrades,
     events,
     url,
     port: address.port,

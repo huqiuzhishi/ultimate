@@ -156,6 +156,7 @@ async function fixture(
     codemode({
       ...prepared,
       access: { allow: () => () => {} },
+      upgrade: () => () => {},
       notice: () => {},
       provide: () => {},
       use: () => undefined,

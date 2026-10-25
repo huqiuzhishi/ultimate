@@ -25,6 +25,9 @@ export function useShortcuts() {
     let timer: ReturnType<typeof setTimeout> | undefined
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return
+      // An interactive terminal owns every key, including Ultimate's global mod shortcuts.
+      if (event.target instanceof HTMLElement && event.target.closest('[data-ultimate-terminal]'))
+        return
       const chord = chordOf(event)
       if (!chord || ['mod', 'alt', 'shift', 'ctrl'].includes(chord)) return
       const sequence = [...pending, chord]

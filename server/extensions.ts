@@ -25,6 +25,7 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context'
 import { AgentDoc } from '@earendil-works/pi-durable'
 import type { ConversationId } from '@earendil-works/pi-durable'
 import type { Access } from './request-security.ts'
+import type { UpgradeHandler, Upgrades } from './upgrades.ts'
 import { EventFeed, eventLog } from './events.ts'
 import type { EventHost } from './events.ts'
 import { extensionApis } from './extension-apis.ts'
@@ -49,6 +50,8 @@ export type ExtensionHost = Pick<
   | 'chapter'
 > & {
   access: Pick<Access, 'allow'>
+  /** Register an exact `/api/extensions/<this extension><path>` HTTP upgrade handler until disposed. */
+  upgrade(path: string, handler: UpgradeHandler): () => void
   notice(message: string): void
   provide(name: string, value: unknown): void
   // oxlint-disable-next-line typescript/no-unnecessary-type-parameters
@@ -108,7 +111,9 @@ export async function loadExtensions(
   vite: ViteDevServer,
   host: PreparedHost,
   changed: () => void | Promise<void>,
-  runtime: Pick<ExtensionHost, 'harness' | 'system' | 'conversations' | 'access'>,
+  runtime: Pick<ExtensionHost, 'harness' | 'system' | 'conversations' | 'access'> & {
+    upgrades: Pick<Upgrades, 'register'>
+  },
   watch: Watch,
   notice: (message: string) => void = () => {},
 ) {
@@ -215,6 +220,15 @@ export async function loadExtensions(
           stops.add(stop)
           return stop
         },
+      },
+      upgrade: (path, handler) => {
+        const remove = runtime.upgrades.register(facetHost, name, path, handler)
+        const stop = () => {
+          remove()
+          stops.delete(stop)
+        }
+        stops.add(stop)
+        return stop
       },
       onOpen: (callback) => {
         if (sharedResource) extensionHost.onOpen(callback)
@@ -337,6 +351,9 @@ export async function loadExtensions(
     catalogue: () => apis.catalogue(),
     trace: trace.reader,
     access: runtime.access,
+    upgrade: () => {
+      throw new Error('Upgrade handlers require a facet scope')
+    },
     notice,
     resource: <T>(key: string, create: () => T) => {
       if (!resources.has(key)) resources.set(key, create())

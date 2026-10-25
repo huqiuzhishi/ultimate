@@ -43,7 +43,11 @@ it('respects typing, dialogs, sequences, timeout, composition and listener teard
     tagName = 'DIV'
     id = ''
     isContentEditable = false
+    terminal = false
     scope?: number
+    closest(selector: string) {
+      return selector === '[data-ultimate-terminal]' && this.terminal ? {} : null
+    }
   }
   class Input extends Element {
     override tagName = 'INPUT'
@@ -52,8 +56,8 @@ it('respects typing, dialogs, sequences, timeout, composition and listener teard
   class Textarea extends Element {
     override tagName = 'TEXTAREA'
     composer = false
-    closest(selector: string) {
-      return selector === '[data-composer-target]' && this.composer ? {} : null
+    override closest(selector: string) {
+      return selector === '[data-composer-target]' && this.composer ? {} : super.closest(selector)
     }
   }
   const window = new EventTarget()
@@ -95,6 +99,12 @@ it('respects typing, dialogs, sequences, timeout, composition and listener teard
   }
   const input = new Input()
   expect(send('x', input)).toBe(false)
+  const terminal = new Element()
+  terminal.terminal = true
+  const beforeTerminal = runCommand.mock.calls.length
+  expect(send('k', terminal, { ctrlKey: true })).toBe(false)
+  expect(send('Escape', terminal)).toBe(false)
+  expect(runCommand).toHaveBeenCalledTimes(beforeTerminal)
   const editable = new Element()
   editable.isContentEditable = true
   expect(send('x', editable)).toBe(false)

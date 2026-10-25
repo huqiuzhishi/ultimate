@@ -1,6 +1,7 @@
 allowBuilds:
   '@google/genai': false
   esbuild: true
+  node-pty: true
   protobufjs: false
   workerd: set this to true or false
 minimumReleaseAgeExclude:
