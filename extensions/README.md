@@ -312,6 +312,8 @@ title bar the host shows above every surface.
 | `titlebar.left`        | Title bar above every surface, after the project chip; monospace, one line                                   |
 | `titlebar.right`       | Title bar, right, before the palette button                                                                  |
 | `header.right`         | Right side of the header, before the panel toggle (`<Header>`)                                               |
+| `agent.top`            | Agent surface, below its header and above the conversation pane                                              |
+| `agent.left`           | Agent surface, left of the conversation pane                                                                 |
 | `statusline.left`      | Bottom status line, left; monospace, one line (`<StatusLine />`)                                             |
 | `statusline.right`     | Bottom status line, right (`<StatusLine />`); on a phone only `phone: true` items stay, the rest go behind ⋯ |
 | `composer.toolbar`     | Left of the composer's footer; a size container, condense with `@max-md:` (`<Conversation />`)               |

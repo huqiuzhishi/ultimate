@@ -1,15 +1,24 @@
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { RotateCcwIcon, SquareTerminalIcon, XIcon } from 'lucide-react'
+import { PanelLeftIcon, PanelTopIcon, RotateCcwIcon, SquareTerminalIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { PointerEvent, ReactNode } from 'react'
-import { cn, defineWebExtension, shortenPath, useConversation, useSystem, useUltimate } from '@/sdk'
+import type { PointerEvent } from 'react'
+import {
+  cn,
+  defineWebExtension,
+  shortenPath,
+  useConversation,
+  useSystem,
+  useUltimate,
+  useViewport,
+} from '@/sdk'
 
 const STORAGE = 'ultimate.terminal'
 const CHANGED = 'ultimate:terminal-state'
-type DrawerState = { open: boolean; height: number }
-const defaults: DrawerState = { open: false, height: 300 }
+type Placement = 'top' | 'left'
+type DrawerState = { open: boolean; placement: Placement; topSize: number; leftSize: number }
+const defaults: DrawerState = { open: false, placement: 'top', topSize: 300, leftSize: 480 }
 const localPage = () =>
   ['127.0.0.1', 'localhost', '::1'].includes(location.hostname) ||
   location.hostname.endsWith('.localhost')
@@ -19,7 +28,10 @@ function stored(): DrawerState {
     const value = JSON.parse(localStorage.getItem(STORAGE) ?? 'null') as Partial<DrawerState> | null
     return {
       open: value?.open === true,
-      height: typeof value?.height === 'number' ? Math.max(140, value.height) : defaults.height,
+      placement: value?.placement === 'left' ? 'left' : 'top',
+      topSize: typeof value?.topSize === 'number' ? Math.max(140, value.topSize) : defaults.topSize,
+      leftSize:
+        typeof value?.leftSize === 'number' ? Math.max(280, value.leftSize) : defaults.leftSize,
     }
   } catch {
     return defaults
@@ -91,11 +103,13 @@ function appearance() {
 function TerminalDrawer({
   conversation,
   cwd,
+  placement,
   state,
   setState,
 }: {
   conversation: number
   cwd: string
+  placement: Placement
   state: DrawerState
   setState: (value: DrawerState) => void
 }) {
@@ -103,8 +117,14 @@ function TerminalDrawer({
   const host = useRef<HTMLDivElement>(null)
   const restart = useRef<() => void>(() => {})
   const [connection, setConnection] = useState<Connection>('connecting')
-  const [liveHeight, setLiveHeight] = useState<number>()
-  const height = liveHeight ?? Math.min(state.height, Math.max(180, window.innerHeight * 0.7))
+  const [liveSize, setLiveSize] = useState<number>()
+  const maximum =
+    placement === 'top'
+      ? Math.max(180, window.innerHeight * 0.7)
+      : Math.max(320, window.innerWidth * 0.6)
+  const minimum = placement === 'top' ? 140 : 280
+  const storedSize = placement === 'top' ? state.topSize : state.leftSize
+  const size = liveSize ?? Math.max(minimum, Math.min(storedSize, maximum))
 
   useEffect(() => {
     const element = host.current
@@ -207,23 +227,26 @@ function TerminalDrawer({
   const resize = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
     event.preventDefault()
-    const start = event.clientY
-    const initial = height
+    const start = placement === 'top' ? event.clientY : event.clientX
+    const initial = size
     event.currentTarget.setPointerCapture(event.pointerId)
-    let nextHeight = initial
+    let nextSize = initial
     const move = (next: globalThis.PointerEvent) => {
-      nextHeight = Math.max(
-        140,
-        Math.min(window.innerHeight * 0.7, initial - (next.clientY - start)),
-      )
-      setLiveHeight(nextHeight)
+      const pointer = placement === 'top' ? next.clientY : next.clientX
+      nextSize = Math.max(minimum, Math.min(maximum, initial + pointer - start))
+      setLiveSize(nextSize)
     }
     const finish = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', finish)
       window.removeEventListener('pointercancel', finish)
-      setState({ ...state, height: Math.round(nextHeight) })
-      setLiveHeight(undefined)
+      setState({
+        ...state,
+        ...(placement === 'top'
+          ? { topSize: Math.round(nextSize) }
+          : { leftSize: Math.round(nextSize) }),
+      })
+      setLiveSize(undefined)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', finish)
@@ -234,14 +257,22 @@ function TerminalDrawer({
   return (
     <section
       aria-label="Terminal"
-      className="relative flex shrink-0 flex-col border-t border-border/70 bg-terminal"
+      className={cn(
+        'relative flex shrink-0 flex-col bg-terminal',
+        placement === 'top' ? 'border-b border-border/70' : 'border-r border-border/70',
+      )}
       data-ultimate-terminal
-      style={{ height }}
+      style={placement === 'top' ? { height: size } : { width: size }}
     >
       <div
         aria-label="Resize terminal"
-        aria-orientation="horizontal"
-        className="absolute -top-1 right-0 left-0 z-10 h-2 cursor-row-resize after:absolute after:top-1 after:right-0 after:left-0 after:h-px after:bg-brand/60 after:opacity-0 hover:after:opacity-100"
+        aria-orientation={placement === 'top' ? 'horizontal' : 'vertical'}
+        className={cn(
+          'absolute z-10 after:absolute after:bg-brand/60 after:opacity-0 hover:after:opacity-100',
+          placement === 'top'
+            ? '-bottom-1 right-0 left-0 h-2 cursor-row-resize after:right-0 after:bottom-1 after:left-0 after:h-px'
+            : 'top-0 -right-1 bottom-0 w-2 cursor-col-resize after:top-0 after:right-1 after:bottom-0 after:w-px',
+        )}
         onPointerDown={resize}
         role="separator"
       />
@@ -262,6 +293,29 @@ function TerminalDrawer({
             )}
           />
           {connection}
+        </span>
+        <span className="flex items-center rounded border border-border/70 p-0.5 max-md:hidden">
+          {(
+            [
+              ['top', PanelTopIcon, 'Place terminal on top'],
+              ['left', PanelLeftIcon, 'Place terminal on the left'],
+            ] as const
+          ).map(([next, Icon, label]) => (
+            <button
+              aria-label={label}
+              aria-pressed={state.placement === next}
+              className={cn(
+                'flex size-5 items-center justify-center rounded-sm hover:text-foreground',
+                state.placement === next && 'bg-muted text-brand',
+              )}
+              key={next}
+              onClick={() => setState({ ...state, placement: next })}
+              title={label}
+              type="button"
+            >
+              <Icon className="size-3" />
+            </button>
+          ))}
         </span>
         <button
           className="flex size-6 items-center justify-center rounded hover:bg-muted hover:text-foreground"
@@ -285,23 +339,35 @@ function TerminalDrawer({
   )
 }
 
-function TerminalComposer({ core, dock }: { core: ReactNode; dock?: boolean }) {
+function TerminalPlacement({ placement }: { placement: Placement }) {
   const { id, agent } = useConversation()
   const system = useSystem()
+  const viewport = useViewport()
   const [state, setState] = useDrawerState()
   const cwd = agent.cwd ?? system?.execution.defaultCwd
-  if (!localPage() || dock || !state.open || id === undefined || !cwd) return core
+  const effective = viewport === 'phone' ? 'top' : state.placement
+  if (!localPage() || !state.open || effective !== placement || id === undefined || !cwd)
+    return null
   return (
-    <>
-      <TerminalDrawer conversation={id} cwd={cwd} setState={setState} state={state} />
-      {core}
-    </>
+    <TerminalDrawer
+      conversation={id}
+      cwd={cwd}
+      placement={placement}
+      setState={setState}
+      state={state}
+    />
   )
 }
 
+const TerminalTop = () => <TerminalPlacement placement="top" />
+const TerminalLeft = () => <TerminalPlacement placement="left" />
+
 export default defineWebExtension({
-  slots: { 'header.right': [HeaderToggle] },
-  composer: TerminalComposer,
+  slots: {
+    'header.right': [HeaderToggle],
+    'agent.top': [TerminalTop],
+    'agent.left': [TerminalLeft],
+  },
   commands: [
     {
       id: 'terminal.toggle',

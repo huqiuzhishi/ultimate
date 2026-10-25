@@ -1,6 +1,6 @@
 # Terminal
 
-Terminal adds a real local PTY to the Agent conversation: toggle it from the header or command palette, then use the shown conversation's cwd and worktree in a resizable xterm drawer above the composer.
+Terminal adds a real local PTY to the Agent surface: toggle it from the header or command palette, then use the shown conversation's cwd and worktree in a resizable xterm split above or left of the agent pane. The compact split selector persists the preferred placement; narrow screens use the top layout.
 
 Each project and conversation gets its own `tmux` session. Hiding the drawer, closing the tab, reloading, or restarting Ultimate detaches only that browser PTY; commands and full-screen programs continue and reappear when it reconnects. `exit` ends the shell, while **Restart shell** deliberately kills that tmux session and starts a fresh one. Two tabs on the same conversation mirror the same session and can both type into it.
 

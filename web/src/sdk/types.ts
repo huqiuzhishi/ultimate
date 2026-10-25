@@ -12,6 +12,8 @@ export type SlotName =
   | 'titlebar.left'
   | 'titlebar.right'
   | 'header.right'
+  | 'agent.top'
+  | 'agent.left'
   | 'statusline.left'
   | 'statusline.right'
   | 'composer.toolbar'
