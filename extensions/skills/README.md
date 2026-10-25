@@ -4,7 +4,7 @@ Provides a skills menu in the composer and documents Pi slash commands in the In
 
 ## Composer Menu
 
-A dropdown in the composer toolbar listing available skills (clone, user, and project scopes). Click a skill to insert `/skill:name ` at the cursor, then type your request and send.
+Type `/` in the composer to open every available skill, then keep typing to filter by name or description. Arrow keys choose a result; Enter or Tab replaces the slash token with `/skill:name `. The book button opens the same complete list with a search field.
 
 Skills are discovered from:
 

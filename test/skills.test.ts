@@ -1,7 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { ProjectTrustStore } from '@earendil-works/pi-coding-agent'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { matchingSkills, skillTrigger } from '../extensions/skills/match.ts'
 import { expandSkillCommand, projectSkills } from '../server/skills.ts'
 import { skillInfo } from '../server/system.ts'
 import { removeTemp, temp } from './helpers.ts'
@@ -79,4 +80,22 @@ it('expands /skill:name args as Pi does and leaves anything else alone', async (
   expect(expandSkillCommand('/skill:ship', skills)).toMatch(/<\/skill>$/)
   expect(expandSkillCommand('/skill:unknown go', skills)).toBe('/skill:unknown go')
   expect(expandSkillCommand('please /skill:ship', skills)).toBe('please /skill:ship')
+})
+
+describe('skill slash autocomplete', () => {
+  const skills = [
+    { name: 'write-extension', description: 'Build an Ultimate extension' },
+    { name: 'verify-ui', description: 'Check a UI change in a browser' },
+    { name: 'integrate-ultimate', description: 'Set up Ultimate in a project' },
+  ]
+
+  it('opens on a slash token and filters both shorthand and explicit skill commands', () => {
+    expect(skillTrigger('please /ver', 11)).toEqual({ start: 7, end: 11, query: 'ver' })
+    expect(skillTrigger('/skill:ui', 9)).toEqual({ start: 0, end: 9, query: 'ui' })
+    expect(skillTrigger('not /one:two', 12)).toBeUndefined()
+
+    expect(matchingSkills(skills, 'ver').map((item) => item.name)).toEqual(['verify-ui'])
+    expect(matchingSkills(skills, 'browser').map((item) => item.name)).toEqual(['verify-ui'])
+    expect(matchingSkills(skills, '')).toEqual(skills)
+  })
 })
