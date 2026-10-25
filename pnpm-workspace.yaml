@@ -32,6 +32,13 @@ minimumReleaseAgeExclude:
 # Dependabot GHSA-587h-7wmj-h5pm and siblings: @tailwindcss/vite and @vitejs/plugin-react resolve vite 8.3.1 on their own. Drop when they peer on >= 8.3.3.
 overrides:
   vite: 8.3.5
+packageExtensions:
+  'pi-cursor-provider@0.1.11':
+    peerDependenciesMeta:
+      '@mariozechner/pi-ai':
+        optional: true
+      '@mariozechner/pi-coding-agent':
+        optional: true
 patchedDependencies:
   '@earendil-works/chord@1.4.0': patches/@earendil-works__chord@1.4.0.patch
   '@earendil-works/pi-claude-code@0.1.0': patches/@earendil-works__pi-claude-code@0.1.0.patch

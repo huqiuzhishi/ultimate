@@ -1,6 +1,6 @@
 {
   "instance": {
-    "model": "openai-codex/gpt-6.1-sol"
+    "model": "cursor/gpt-5.4"
   },
   "isolates": {
     "worktree": {

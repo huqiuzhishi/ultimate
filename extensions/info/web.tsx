@@ -441,6 +441,63 @@ function Empty({ children }: { children: ReactNode }) {
   return <div className="font-mono text-[11px] text-muted-foreground/60">{children}</div>
 }
 
+/** Pi slash commands: which terminal commands work in the browser and which don't. */
+function PiCommands() {
+  const commands = [
+    {
+      name: '/login',
+      description: 'Add provider authentication',
+      equivalent: 'Models extension: pick a provider and follow the login flow',
+    },
+    {
+      name: '/fork',
+      description: 'Create a new session from an earlier message',
+      equivalent: 'Lineage extension: "Go back" button on any message rewinds and diverges',
+    },
+    {
+      name: '/reload',
+      description: 'Reload extensions, skills, templates, keybindings, themes',
+      equivalent: 'Automatic: durable persistence loads resources on restart',
+    },
+    {
+      name: '/skill:name',
+      description: 'Run a skill',
+      equivalent: 'Skills menu in composer, or ⌘K → Run a skill',
+    },
+    {
+      name: '/settings, /model, /thinking',
+      description: 'Change configuration',
+      equivalent: 'Not directly exposed; model picking in sidebar, settings via provider login',
+    },
+    {
+      name: '/quit, /hotkeys, /changelog',
+      description: 'Terminal UI features',
+      equivalent: 'Not available in browser',
+    },
+    {
+      name: '/new, /resume, /tree, /clone',
+      description: 'Session and history navigation',
+      equivalent: 'Lineage panel and branch UI; not applicable to durable conversations',
+    },
+  ]
+
+  return (
+    <Section id="pi-commands" meta="reference" title="Pi Slash Commands">
+      <div className="flex flex-col gap-2">
+        {commands.map(({ name, description, equivalent }) => (
+          <div key={name} className="space-y-0.5">
+            <div className="flex items-start gap-2">
+              <code className="shrink-0 font-mono text-[11px] text-brand">{name}</code>
+              <span className="text-[11px] text-muted-foreground/80">{description}</span>
+            </div>
+            <div className="ml-[2rem] text-[10.5px] text-muted-foreground/60">{equivalent}</div>
+          </div>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
 function InfoPanel() {
   const system = useSystem()
   if (!system)
@@ -456,13 +513,22 @@ function InfoPanel() {
       <Process system={system} />
       <Persistence system={system} />
       <Skills system={system} />
+      <PiCommands />
       <ContextFiles system={system} />
     </div>
   )
 }
 
 export default defineWebExtension({
-  panels: [{ id: 'info', title: 'Info', icon: InfoIcon, component: InfoPanel, order: 5 }],
+  panels: [
+    {
+      id: 'info',
+      title: 'Info',
+      icon: InfoIcon,
+      component: InfoPanel,
+      order: 5,
+    },
+  ],
   slots: { overlay: [SkillPicker] },
   commands: [
     {
