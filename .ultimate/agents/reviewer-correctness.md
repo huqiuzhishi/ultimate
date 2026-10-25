@@ -1,7 +1,7 @@
 ---
 name: reviewer-correctness
 description: Correctness, security and regressions review of an immutable commit range (Astra 6).
-model: cursor/gpt-5.4
+model: cursor/claude-sonnet-5-5
 thinking: high
 tools: [read, bash]
 ---

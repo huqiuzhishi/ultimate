@@ -1,7 +1,7 @@
 ---
 name: reviewer-architecture
 description: Advisory architecture review (Sol 6.1, fast); asks whether a range uses Ultimate's own architecture instead of building beside it. Never blocks.
-model: cursor/gpt-5.4
+model: cursor/claude-sonnet-5-5
 thinking: low
 fast: true
 tools: [read, bash]

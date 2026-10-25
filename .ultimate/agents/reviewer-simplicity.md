@@ -1,7 +1,7 @@
 ---
 name: reviewer-simplicity
 description: Simplicity, slop and test-quality review of an immutable commit range (Sol 6.1).
-model: cursor/gpt-5.4
+model: cursor/claude-sonnet-5-5
 thinking: high
 fast: true
 tools: [read, bash]
