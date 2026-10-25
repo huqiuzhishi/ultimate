@@ -9,8 +9,9 @@ Type `/` in the composer to open every available skill, then keep typing to filt
 Skills are discovered from:
 
 - Clone `skills/`
-- `~/.ultimate/skills` (user personal skills)
+- `~/.pi/agent/skills` (Pi's personal skills)
+- `~/.ultimate/skills` (Ultimate-specific personal skills; overrides same-named Pi skills)
 - `.pi/skills` (project)
 - `.agents/skills` and `.ultimate/skills` (project, if trusted)
 
-Note: `~/.pi/agent/skills` (Pi terminal agent's personal skills) are not loaded here; personal skills for Ultimate live in `~/.ultimate/skills`.
+Pi's canonical personal path is `~/.pi/agent/skills` (singular `agent`). It may itself be a symlink to a shared Agent Skills folder.

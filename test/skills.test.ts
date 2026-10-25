@@ -28,10 +28,18 @@ async function setup() {
     'name: ship\ndescription: Clone ship',
   )
   await skill(
+    join(host.userHome, '.pi/agent/skills/ship/SKILL.md'),
+    'name: ship\ndescription: Pi user ship',
+  )
+  await skill(
+    join(host.userHome, '.pi/agent/skills/pi-personal/SKILL.md'),
+    'name: pi-personal\ndescription: Personal Pi skill',
+  )
+  await skill(
     join(host.userHome, '.ultimate/skills/ship/SKILL.md'),
     'name: ship\ndescription: User ship',
   )
-  // The personal Agent Skills folder belongs to other agents and is never read.
+  // The generic personal Agent Skills folder is not read separately. Pi may expose it through its own skills path.
   await skill(
     join(host.userHome, '.agents/skills/shared/SKILL.md'),
     'name: shared\ndescription: Personal Agent Skills folder',
@@ -49,9 +57,13 @@ it('loads every scope, lets later scopes override and keeps Pi diagnostics', asy
   const untrusted = skillInfo(projectSkills(host))
   // The project's .agents and .ultimate skills wait for the project to be trusted.
   expect(untrusted.skills.map((s) => [s.name, s.scope, s.description])).toEqual([
+    ['pi-personal', 'user', 'Personal Pi skill'],
     ['ship', 'user', 'User ship'],
   ])
-  expect(untrusted.skills[0]?.overrides).toEqual([join(host.ultimateRoot, 'skills/ship/SKILL.md')])
+  expect(untrusted.skills[1]?.overrides).toEqual([
+    join(host.ultimateRoot, 'skills/ship/SKILL.md'),
+    join(host.userHome, '.pi/agent/skills/ship/SKILL.md'),
+  ])
   expect(untrusted.skillDiagnostics).toEqual([])
 
   new ProjectTrustStore(join(host.userHome, '.ultimate')).set(host.projectRoot, true)

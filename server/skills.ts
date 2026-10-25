@@ -10,21 +10,21 @@ export type SkillScope = 'clone' | 'user' | 'project'
 export type ScopedSkill = Skill & { scope: SkillScope; overrides: string[] }
 
 /**
- * Skills from the clone, the project's `.pi/skills`, `~/.ultimate/skills` and, once the project is trusted,
- * `<project>/.ultimate/skills`. A later scope overrides an earlier skill of the same name (Pi keeps the first;
- * Ultimate lets the project override the user and the user the clone). Diagnostics are Pi's, per file.
+ * Skills from the clone, the project's `.pi/skills`, Pi's `~/.pi/agent/skills`, `~/.ultimate/skills` and, once the
+ * project is trusted, `<project>/.ultimate/skills`. A later scope overrides an earlier skill of the same name (Pi
+ * keeps the first; Ultimate lets the project override the user and the user the clone). Diagnostics are Pi's, per file.
  */
 export function projectSkills(
   host: { ultimateRoot: string; projectRoot: string; userHome: string },
   cwd = host.projectRoot,
 ) {
-  // A project's `.agents/skills` (the Agent Skills folder other tools share) loads with its `.ultimate/skills`, once the
-  // project is trusted. The personal `~/.agents/skills` does not: personal skills for Ultimate live in
-  // `~/.ultimate/skills`.
+  // A project's `.agents/skills` loads with its `.ultimate/skills` once trusted. Pi's personal skills load before
+  // Ultimate's, so a deliberately Ultimate-specific skill of the same name wins.
   const trusted = useProjectSetup(host.projectRoot, host.userHome)
   const layers: [string, SkillScope][] = [
     [join(host.ultimateRoot, 'skills'), 'clone'],
     [join(cwd, '.pi/skills'), 'project'],
+    [join(host.userHome, '.pi/agent/skills'), 'user'],
     [join(host.userHome, '.ultimate/skills'), 'user'],
     ...(trusted
       ? ([
