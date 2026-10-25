@@ -874,23 +874,34 @@ export function createLander(
                 // Outcomes are durable (memos are first-writer-wins, so the rerun has its own key): a resume
                 // neither reruns a passed check nor grants another rerun, and keeps the flaky note.
                 const key = `check:${id}:${attempt}:${Array.isArray(group) ? `${position}.${member}` : position}`
-                let first = await runtime.memo<'passed' | 'failed'>(key, context)
+                const timeoutKey = `${key}:timeout`
+                let timedOut = await runtime.memo<{ failure: string }>(timeoutKey, context)
+                let first = await runtime.memo<'passed' | 'failed' | 'timeout'>(key, context)
+                if (!first && timedOut) first = await runtime.memo(key, 'timeout', context)
                 if (!first) {
                   await step(`checking: ${command}`)
                   const began = performance.now()
                   const ran = await run(command, member)
-                  const result = ran.failure === undefined ? 'passed' : 'failed'
+                  const result =
+                    ran.failure === undefined ? 'passed' : ran.timedOut ? 'timeout' : 'failed'
                   // Logged before the memo: a crash in between reruns the check and logs it again, as it ran.
                   // A failure keeps its output tail, so a check that passes on its rerun can still be diagnosed.
                   await step(
                     `checked: ${command}`,
-                    { command, result, ...(ran.summary ? { summary: ran.summary } : {}) },
+                    {
+                      command,
+                      result: result === 'passed' ? 'passed' : 'failed',
+                      ...(ran.summary ? { summary: ran.summary } : {}),
+                    },
                     ran.failure,
                     { ms: performance.now() - began, timedOut: ran.timedOut },
                   )
+                  if (result === 'timeout')
+                    timedOut = await runtime.memo(timeoutKey, { failure: ran.failure! }, context)
                   first = await runtime.memo(key, result, context)
                 }
                 if (first === 'passed') return {}
+                if (first === 'timeout') return { failure: timedOut!.failure, timedOut: true }
                 // The rerun's outcome is durable either way: a resume while the group's other commands still run
                 // neither grants a third run nor loses the failure.
                 let rerun = await runtime.memo<{ failure?: string }>(`${key}:rerun`, context)
@@ -936,7 +947,9 @@ export function createLander(
               const failed = results.findIndex((result) => result.failure !== undefined)
               if (failed !== -1)
                 return handOver(
-                  `check failed twice: ${commands[failed]}`,
+                  results[failed].timedOut
+                    ? `check timed out: ${commands[failed]}`
+                    : `check failed twice: ${commands[failed]}`,
                   results[failed].failure!,
                   'Fix it, verify and submit again.',
                   { base, merging: entry.tip },

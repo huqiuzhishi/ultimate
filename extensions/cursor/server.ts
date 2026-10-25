@@ -73,6 +73,25 @@ function discoveredModels(config: ProviderConfig, raw: CursorModel[]): ProviderM
   }))
 }
 
+/** Valid provider-model rows restored from Pi's provider-scoped model catalog. */
+export function restoreCursorModels(stored: { models?: readonly unknown[] } | undefined) {
+  const restored = (stored?.models ?? []).filter((value): value is ProviderModel => {
+    if (!value || typeof value !== 'object') return false
+    const model = value as Record<string, unknown>
+    return (
+      (model.type === undefined || model.type === 'chat') &&
+      typeof model.id === 'string' &&
+      typeof model.name === 'string' &&
+      typeof model.reasoning === 'boolean' &&
+      Array.isArray(model.input) &&
+      !!model.cost &&
+      typeof model.contextWindow === 'number' &&
+      typeof model.maxTokens === 'number'
+    )
+  })
+  return models({ models: restored }) ?? []
+}
+
 /** Add Pi Durable's stable per-conversation identity to Cursor's proxy payload. */
 export function cursorStreamOptions(options?: SimpleStreamOptions): SimpleStreamOptions {
   return {
@@ -94,10 +113,20 @@ function adapt(
     ...config,
     models: models(config),
     async refreshModels(context) {
-      if (!context.allowNetwork || context.credential?.type !== 'oauth') return models(config) ?? []
+      // Pi's provider-scoped catalog may come from a newer independently installed plugin. Do not replace or
+      // combine it with this package's older bundled catalog, which can reintroduce retired models.
+      const cached = restoreCursorModels(context.stored)
+      if (cached.length) return cached
+
+      const configured = models(config) ?? []
+      if (!context.allowNetwork || context.credential?.type !== 'oauth') return configured
       const discovered = await getCursorModels(context.credential.access)
-      if (!discovered.length) return models(config) ?? []
-      return discoveredModels(config, discovered)
+      if (!discovered.length) return configured
+      const refreshed = discoveredModels(config, discovered)
+      await context.publish({
+        persist: { models: refreshed as never, checkedAt: Date.now() },
+      })
+      return refreshed
     },
     streamSimple: (model, context, options) =>
       track(

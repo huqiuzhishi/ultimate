@@ -1,7 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { ProjectTrustStore } from '@earendil-works/pi-coding-agent'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { matchingSkills, skillTrigger } from '../extensions/skills/match.ts'
 import { expandSkillCommand, projectSkills } from '../server/skills.ts'
 import { skillInfo } from '../server/system.ts'
 import { removeTemp, temp } from './helpers.ts'
@@ -27,10 +28,18 @@ async function setup() {
     'name: ship\ndescription: Clone ship',
   )
   await skill(
+    join(host.userHome, '.pi/agent/skills/ship/SKILL.md'),
+    'name: ship\ndescription: Pi user ship',
+  )
+  await skill(
+    join(host.userHome, '.pi/agent/skills/pi-personal/SKILL.md'),
+    'name: pi-personal\ndescription: Personal Pi skill',
+  )
+  await skill(
     join(host.userHome, '.ultimate/skills/ship/SKILL.md'),
     'name: ship\ndescription: User ship',
   )
-  // The personal Agent Skills folder belongs to other agents and is never read.
+  // The generic personal Agent Skills folder is not read separately. Pi may expose it through its own skills path.
   await skill(
     join(host.userHome, '.agents/skills/shared/SKILL.md'),
     'name: shared\ndescription: Personal Agent Skills folder',
@@ -48,9 +57,13 @@ it('loads every scope, lets later scopes override and keeps Pi diagnostics', asy
   const untrusted = skillInfo(projectSkills(host))
   // The project's .agents and .ultimate skills wait for the project to be trusted.
   expect(untrusted.skills.map((s) => [s.name, s.scope, s.description])).toEqual([
+    ['pi-personal', 'user', 'Personal Pi skill'],
     ['ship', 'user', 'User ship'],
   ])
-  expect(untrusted.skills[0]?.overrides).toEqual([join(host.ultimateRoot, 'skills/ship/SKILL.md')])
+  expect(untrusted.skills[1]?.overrides).toEqual([
+    join(host.ultimateRoot, 'skills/ship/SKILL.md'),
+    join(host.userHome, '.pi/agent/skills/ship/SKILL.md'),
+  ])
   expect(untrusted.skillDiagnostics).toEqual([])
 
   new ProjectTrustStore(join(host.userHome, '.ultimate')).set(host.projectRoot, true)
@@ -79,4 +92,22 @@ it('expands /skill:name args as Pi does and leaves anything else alone', async (
   expect(expandSkillCommand('/skill:ship', skills)).toMatch(/<\/skill>$/)
   expect(expandSkillCommand('/skill:unknown go', skills)).toBe('/skill:unknown go')
   expect(expandSkillCommand('please /skill:ship', skills)).toBe('please /skill:ship')
+})
+
+describe('skill slash autocomplete', () => {
+  const skills = [
+    { name: 'write-extension', description: 'Build an Ultimate extension' },
+    { name: 'verify-ui', description: 'Check a UI change in a browser' },
+    { name: 'integrate-ultimate', description: 'Set up Ultimate in a project' },
+  ]
+
+  it('opens on a slash token and filters both shorthand and explicit skill commands', () => {
+    expect(skillTrigger('please /ver', 11)).toEqual({ start: 7, end: 11, query: 'ver' })
+    expect(skillTrigger('/skill:ui', 9)).toEqual({ start: 0, end: 9, query: 'ui' })
+    expect(skillTrigger('not /one:two', 12)).toBeUndefined()
+
+    expect(matchingSkills(skills, 'ver').map((item) => item.name)).toEqual(['verify-ui'])
+    expect(matchingSkills(skills, 'browser').map((item) => item.name)).toEqual(['verify-ui'])
+    expect(matchingSkills(skills, '')).toEqual(skills)
+  })
 })

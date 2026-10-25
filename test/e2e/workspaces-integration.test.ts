@@ -1584,6 +1584,22 @@ it.concurrent('runs a check group concurrently and records each summary', async 
   )
   expect(checks).toHaveLength(3)
 })
+it.concurrent('does not rerun a check stopped by its watchdog', async () => {
+  const f = await lander({})
+  const marker = join(f.directory, 'timed-out-runs')
+  const command = `printf 'run\\n' >> '${marker}'; sleep 10`
+  f.host.projectSettings = async () => ({
+    lander: { checks: [{ command, timeout: 0.1 }] },
+  })
+  const id = await f.create()
+  await f.service.ready(id, context)
+  await commit((await f.service.get(id, context))!.path)
+  await f.service.submit(id, 'None', context)
+  const [report] = await submitted(f, id)
+  expect(report).toContain('check timed out:')
+  expect(await readFile(marker, 'utf8')).toBe('run\n')
+  expect((await landerLog(f)).log.some((line) => line.step === `rerunning: ${command}`)).toBe(false)
+})
 it.concurrent('reruns only the failing command of a group, reports its output twice failed, and lands a flaky one', async () => {
   const f = await lander({
     checks: [['echo PASSING_SUMMARY', 'echo CHECK_OUTPUT_TAIL; test ! -f fail.txt']],

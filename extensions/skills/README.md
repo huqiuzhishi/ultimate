@@ -4,13 +4,14 @@ Provides a skills menu in the composer and documents Pi slash commands in the In
 
 ## Composer Menu
 
-A dropdown in the composer toolbar listing available skills (clone, user, and project scopes). Click a skill to insert `/skill:name ` at the cursor, then type your request and send.
+Type `/` in the composer to open every available skill, then keep typing to filter by name or description. Arrow keys choose a result; Enter or Tab replaces the slash token with `/skill:name `. The book button opens the same complete list with a search field.
 
 Skills are discovered from:
 
 - Clone `skills/`
-- `~/.ultimate/skills` (user personal skills)
+- `~/.pi/agent/skills` (Pi's personal skills)
+- `~/.ultimate/skills` (Ultimate-specific personal skills; overrides same-named Pi skills)
 - `.pi/skills` (project)
 - `.agents/skills` and `.ultimate/skills` (project, if trusted)
 
-Note: `~/.pi/agent/skills` (Pi terminal agent's personal skills) are not loaded here; personal skills for Ultimate live in `~/.ultimate/skills`.
+Pi's canonical personal path is `~/.pi/agent/skills` (singular `agent`). It may itself be a symlink to a shared Agent Skills folder.

@@ -1,6 +1,6 @@
 import type { SimpleStreamOptions } from '@earendil-works/pi-ai'
 import { describe, expect, it, vi } from 'vitest'
-import { cursorStreamOptions } from '../extensions/cursor/server.ts'
+import { cursorStreamOptions, restoreCursorModels } from '../extensions/cursor/server.ts'
 
 type OnPayload = NonNullable<SimpleStreamOptions['onPayload']>
 
@@ -29,5 +29,25 @@ describe('Cursor stream payload', () => {
       pi_session_id: 'conversation-b',
     })
     await expect(anonymous.onPayload?.(payload, undefined as never)).resolves.toBe(payload)
+  })
+})
+
+describe('Cursor model catalog', () => {
+  const model = (id: string, name = id) => ({
+    id,
+    name,
+    reasoning: true,
+    input: ['text'] as ('text' | 'image')[],
+    cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 200_000,
+    maxTokens: 64_000,
+  })
+
+  it('restores newer models persisted by the independently installed Pi plugin', () => {
+    expect(
+      restoreCursorModels({ models: [model('gpt-5.6-sol'), { id: 'invalid' }] }).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(['gpt-5.6-sol'])
   })
 })
