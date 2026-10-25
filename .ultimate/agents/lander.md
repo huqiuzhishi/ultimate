@@ -2,7 +2,7 @@
 name: lander
 description: Ultimate's lander; fixes submissions that fail to land, then lands them after every check passes again.
 model: cursor/gpt-5.6-sol
-thinking: high
+thinking: medium
 fast: true
 onFailure: fix
 addTools:
