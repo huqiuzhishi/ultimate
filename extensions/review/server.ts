@@ -170,9 +170,18 @@ export const actions = {
       worktree === undefined ? input.spec : 'uncommitted',
       { target: (branch) => target(host, branch), signal },
     )
+    const branch = input.spec.startsWith('branch:')
+      ? input.spec.slice('branch:'.length).trim()
+      : undefined
+    const branchWorktree = branch
+      ? Object.values((await index(host, context))?.items ?? {}).find(
+          (item) => item.branch === branch && item.state === 'ready',
+        )?.path
+      : undefined
+    const resolved = branchWorktree ? { ...diff, cwd: branchWorktree } : diff
     return worktree === undefined
-      ? diff
-      : { ...diff, spec: input.spec, title: `Uncommitted changes in #${worktree}` }
+      ? resolved
+      : { ...resolved, spec: input.spec, title: `Uncommitted changes in #${worktree}` }
   }),
   ranges: implementAction(RangesAction, (_args, { host }) => ranges(host)),
   recipient: implementAction(RecipientAction, async (args, { host }) => {

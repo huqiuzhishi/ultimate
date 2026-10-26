@@ -1,6 +1,8 @@
 // Pi upstream: @earendil-works/pi-durable@1.4.0 src/tools/bash.ts and src/tools/edit.ts — internal bash exit_code diagnostic message drives exitOf and untyped details.patch/details.diff drive Edit. Drop when Pi exports structured bash outcomes and structured diff rows for rendering.
-import { XIcon } from 'lucide-react'
+import type { EntryRecord } from '@earendil-works/pi-durable'
+import { CopyIcon, FileCode2Icon, FileDiffIcon, XIcon } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { AnsiOutput } from '@/components/ai/ansi-output'
 import { Shimmer } from '@/components/ai/shimmer'
 import { CodeBlock, languageFromPath } from '@/components/ai/code-block'
@@ -13,30 +15,35 @@ import {
   ToolOutput,
   ToolSection,
 } from '@/components/ai/tool'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   api,
   cn,
   defineWebExtension,
+  events,
   formatBytes,
   shortenPath,
   useConversation,
   useStore,
   useToolDuration,
+  useTranscript,
+  useUltimate,
 } from '@/sdk'
 import type { ToolCallView } from '@/sdk'
 import { type BashStep, formatBashCommand } from './bash-command.tsx'
-import { countChanges, Diff, editRows, parseDisplayDiff, parsePatch } from './diff.tsx'
+import {
+  countChanges,
+  Diff,
+  editRows,
+  firstChangedLine,
+  parseDisplayDiff,
+  parsePatch,
+} from './diff.tsx'
 import { CancelAction } from './refs.ts'
+import { OpenFileButton, useShortPath } from './ui.tsx'
 
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
-
-/** A path relative to the conversation's cwd, else with `~`. */
-function usePath(path: string) {
-  const cwd = useConversation((conversation) => conversation.agent.cwd)
-  const defaultCwd = useStore((state) => state.system?.execution.defaultCwd)
-  const home = useStore((state) => state.system?.machine.home)
-  return shortenPath(path, { cwd: cwd ?? defaultCwd, home })
-}
+const usePath = useShortPath
 
 function lineCount(value: string) {
   if (!value) return 0
@@ -69,6 +76,13 @@ function Read({ call }: { call: ToolCallView }) {
   return (
     <Tool defaultOpen={failed || !!image}>
       <ToolHeader
+        action={
+          path &&
+          !skill &&
+          !image &&
+          !failed &&
+          call.status !== 'streaming' && <OpenFileButton line={offset} path={path} />
+        }
         meta={
           <>
             {count > 0 && <span>{lines(count)}</span>}
@@ -146,6 +160,7 @@ function Write({ call }: { call: ToolCallView }) {
   return (
     <Tool onOpenChange={setToggled} open={open}>
       <ToolHeader
+        action={path && !streaming && !failed && <OpenFileButton path={path} />}
         meta={
           <>
             {content && (
@@ -199,11 +214,13 @@ function Edit({ call }: { call: ToolCallView }) {
       : editRows(edits)
   // Counts only once the model has written the whole call: mid-stream they would still change.
   const { added, removed } = countChanges(streaming ? [] : rows)
+  const firstLine = firstChangedLine(rows)
   const failed = call.status === 'error'
   const scroller = useFollow<HTMLDivElement>(streaming, rows.length)
   return (
     <Tool defaultOpen>
       <ToolHeader
+        action={path && !streaming && !failed && <OpenFileButton line={firstLine} path={path} />}
         meta={
           <>
             {added + removed > 0 && (
@@ -479,6 +496,250 @@ function BashLine({ call }: { call: ToolCallView }) {
   )
 }
 
+export interface WrittenFile {
+  path: string
+  shown: string
+  name: string
+  tool: 'write' | 'edit'
+  callId: string
+  entryId: number
+  count: number
+  line?: number
+}
+
+const isUserTurnStart = (entry: EntryRecord) =>
+  entry.model?.[0]?.role === 'user' && entry.kind !== 'pi.compaction'
+
+function collectWrittenFiles(
+  entries: readonly EntryRecord[],
+  scope: readonly EntryRecord[],
+  options: { cwd?: string; home?: string },
+): WrittenFile[] {
+  const results = new Map<string, { isError?: boolean; details?: EditDetails }>()
+  for (const entry of entries) {
+    const message = entry.model?.[0]
+    if (message?.role === 'toolResult')
+      results.set(message.toolCallId, {
+        isError: message.isError,
+        details: entry.data as EditDetails | undefined,
+      })
+  }
+  const byPath = new Map<string, WrittenFile>()
+  for (const entry of scope) {
+    const message = entry.model?.[0]
+    if (message?.role !== 'assistant') continue
+    for (const block of message.content) {
+      if (block.type !== 'toolCall' || (block.name !== 'write' && block.name !== 'edit')) continue
+      const result = results.get(block.id)
+      if (!result || result.isError) continue
+      const args = block.arguments as { path?: unknown } | undefined
+      const raw = typeof args?.path === 'string' ? args.path.trim() : ''
+      if (!raw) continue
+      const shown = shortenPath(raw, options)
+      const name = raw.split('/').filter(Boolean).at(-1) ?? raw
+      const details = result.details
+      const line =
+        block.name === 'edit'
+          ? firstChangedLine(
+              details?.patch
+                ? parsePatch(details.patch)
+                : details?.diff
+                  ? parseDisplayDiff(details.diff)
+                  : [],
+            )
+          : undefined
+      const previous = byPath.get(raw)
+      byPath.set(raw, {
+        path: raw,
+        shown,
+        name,
+        tool: block.name,
+        callId: block.id,
+        entryId: entry.id,
+        count: (previous?.count ?? 0) + 1,
+        line: line ?? previous?.line,
+      })
+    }
+  }
+  return [...byPath.values()]
+}
+
+function revealToolCall(conversationId: number | undefined, entryId: number, callId: string) {
+  if (conversationId !== undefined)
+    events.emit('ultimate:reveal-entry', { conversationId, entryId })
+  setTimeout(() => {
+    const element = document.querySelector<HTMLElement>(
+      `[data-tool-call-id="${CSS.escape(callId)}"]`,
+    )
+    element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, 40)
+}
+
+/**
+ * Distinct files written or edited in a completed assistant turn, rendered as chips at the bottom of the turn's final
+ * response (matching durable-pi's `.turn-written-files`).
+ */
+function AssistantTurnFiles({
+  entry,
+  blocks,
+  core,
+}: {
+  entry: EntryRecord
+  blocks?: readonly number[]
+  core: ReactNode
+}) {
+  const entries = useTranscript()
+  const { id, agent } = useConversation()
+  const defaultCwd = useStore((state) => state.system?.execution.defaultCwd)
+  const home = useStore((state) => state.system?.machine.home)
+  const message = entry.model?.[0]
+  const lastBlock = message?.role === 'assistant' ? message.content.length - 1 : -1
+  const isTurnTail =
+    message?.role === 'assistant' &&
+    message.stopReason !== 'toolUse' &&
+    (!blocks || blocks.includes(lastBlock))
+  const turnFiles = useMemo(() => {
+    if (!isTurnTail) return []
+    const at = entries.indexOf(entry)
+    if (at < 0) return []
+    const turnEntries: EntryRecord[] = []
+    for (let index = at; index >= 0; index--) {
+      const current = entries[index]
+      if (isUserTurnStart(current)) break
+      turnEntries.unshift(current)
+    }
+    return collectWrittenFiles(entries, turnEntries, {
+      cwd: agent.cwd ?? defaultCwd,
+      home,
+    })
+  }, [isTurnTail, entries, entry, agent.cwd, defaultCwd, home])
+  if (!turnFiles.length) return core
+  return (
+    <div className="space-y-1.5">
+      {core}
+      <div
+        aria-label="Files written in this turn"
+        className="flex flex-wrap items-center gap-1.5 font-mono text-[11.5px]"
+        data-turn-written-files
+      >
+        {turnFiles.map((file) => (
+          <div
+            className="inline-flex max-w-full min-w-0 items-center overflow-hidden rounded-md border border-border/80 bg-card/60"
+            data-turn-file-chip={file.path}
+            key={file.path}
+          >
+            <button
+              className="inline-flex h-6 min-w-0 cursor-pointer items-center gap-1.5 px-2 text-foreground/90 transition-colors hover:bg-accent/50"
+              onClick={() => revealToolCall(id, file.entryId, file.callId)}
+              title={`${file.shown} (${file.tool})`}
+              type="button"
+            >
+              <FileCode2Icon className="size-3 shrink-0 text-brand" />
+              <span className="truncate">{file.name}</span>
+            </button>
+            <OpenFileButton line={file.line} path={file.path} variant="chip" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Header popover listing all files written or edited by the agent in the shown conversation, with jump-to-call, copy
+ * path, and `nvim` actions (matching durable-pi's `Changed files` header menu).
+ */
+function ChangedFilesButton() {
+  const { id, agent } = useConversation()
+  const { surface } = useUltimate()
+  const entries = useTranscript()
+  const defaultCwd = useStore((state) => state.system?.execution.defaultCwd)
+  const home = useStore((state) => state.system?.machine.home)
+  const [open, setOpen] = useState(false)
+  const cwd = agent.cwd ?? defaultCwd
+  const files = useMemo(
+    () => (surface === 'agent' ? collectWrittenFiles(entries, entries, { cwd, home }) : []),
+    [surface, entries, cwd, home],
+  )
+  if (surface !== 'agent' || id === undefined || files.length === 0) return null
+  const shownCwd = cwd ? shortenPath(cwd, { home }) : undefined
+  return (
+    <Popover onOpenChange={setOpen} open={open}>
+      <PopoverTrigger asChild>
+        <button
+          aria-label="Changed files"
+          className={cn(
+            'flex h-7 cursor-pointer items-center gap-1 rounded px-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+            open && 'bg-muted text-brand',
+          )}
+          data-changed-files-toggle
+          title={`${files.length} file${files.length === 1 ? '' : 's'} changed by this agent`}
+          type="button"
+        >
+          <FileDiffIcon className="size-3.5 shrink-0" />
+          <span className="rounded-full bg-brand/15 px-1.5 py-px text-[10px] font-medium text-brand tabular-nums">
+            {files.length}
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-[min(32rem,calc(100vw-2rem))] p-0 font-mono text-[12px]"
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2 text-[11px] text-muted-foreground">
+          <span className="font-medium text-foreground">Changed files ({files.length})</span>
+          {shownCwd && (
+            <span className="min-w-0 truncate text-muted-foreground/70" title={cwd}>
+              {shownCwd}
+            </span>
+          )}
+        </div>
+        <div className="max-h-80 divide-y divide-border/50 overflow-y-auto">
+          {files.map((file) => (
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-accent/40"
+              data-changed-file-row={file.path}
+              key={file.path}
+            >
+              <button
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+                onClick={() => {
+                  setOpen(false)
+                  revealToolCall(id, file.entryId, file.callId)
+                }}
+                title={`Jump to ${file.tool} (#${file.entryId}) — ${file.path}`}
+                type="button"
+              >
+                <FileCode2Icon className="size-3.5 shrink-0 text-brand" />
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="text-foreground">{file.name}</span>
+                  {file.shown !== file.name && (
+                    <span className="ml-1.5 text-[11px] text-muted-foreground">{file.shown}</span>
+                  )}
+                </span>
+                <span className="flex shrink-0 items-center gap-1 text-[10.5px] text-muted-foreground">
+                  <span>{file.tool}</span>
+                  {file.count > 1 && <span>×{file.count}</span>}
+                </span>
+              </button>
+              <button
+                aria-label={`Copy path ${file.name}`}
+                className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() => void navigator.clipboard.writeText(file.path)}
+                title={`Copy ${file.path}`}
+                type="button"
+              >
+                <CopyIcon className="size-3" />
+              </button>
+              <OpenFileButton line={file.line} path={file.path} />
+            </div>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export default defineWebExtension({
   tools: { read: Read, write: Write, edit: Edit, bash: Bash },
   toolLines: {
@@ -486,5 +747,11 @@ export default defineWebExtension({
     write: fileLine('write'),
     edit: fileLine('edit'),
     bash: BashLine,
+  },
+  entries: {
+    'pi.assistant': AssistantTurnFiles,
+  },
+  slots: {
+    'header.right': [ChangedFilesButton],
   },
 })

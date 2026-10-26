@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { IncomingHttpHeaders } from 'node:http'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 
 const loopback = (hostname: string) =>
   ['127.0.0.1', 'localhost', '[::1]'].includes(hostname) || hostname.endsWith('.localhost')
@@ -74,4 +76,57 @@ export function tmuxArgs(
 
 export function terminalSize(value: string | null, fallback: number, maximum: number) {
   return Math.max(2, Math.min(maximum, Number(value) || fallback))
+}
+
+const unicodeSpaces = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g
+
+/**
+ * Resolve a tool or review file path against `cwd` (and `userHome` for `~`), rejecting empty paths and control
+ * characters.
+ */
+export function resolveTerminalFile(rawPath: string, cwd: string, userHome = homedir()) {
+  const normalized = rawPath
+    .replace(unicodeSpaces, ' ')
+    .trim()
+    .replace(/^@(?=\S)/, '')
+  if (!normalized || /\p{Cc}/u.test(normalized)) throw new Error('Invalid terminal file path')
+  const expanded =
+    normalized === '~'
+      ? userHome
+      : normalized.startsWith('~/')
+        ? resolve(userHome, normalized.slice(2))
+        : normalized
+  return resolve(cwd, expanded)
+}
+
+/**
+ * Build `tmux new-window` arguments that open `filePath` in `nvim` inside `session` without passing anything through a
+ * shell parser or injecting keystrokes into an active pane.
+ */
+export function nvimWindowArgs(
+  server: string,
+  name: string,
+  cwd: string,
+  filePath: string,
+  options?: { line?: number; nvimBin?: string; pathEnv?: string },
+) {
+  const line =
+    typeof options?.line === 'number' && Number.isSafeInteger(options.line) && options.line >= 1
+      ? options.line
+      : undefined
+  return [
+    '-L',
+    server,
+    'new-window',
+    '-t',
+    name,
+    '-c',
+    cwd,
+    ...(options?.pathEnv ? ['-e', `PATH=${options.pathEnv}`] : []),
+    '--',
+    options?.nvimBin ?? 'nvim',
+    ...(line ? [`+${line}`] : []),
+    '--',
+    filePath,
+  ]
 }

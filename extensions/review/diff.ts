@@ -276,6 +276,7 @@ export async function reviewDiff(cwd: string, spec: string, options: Options): P
     title: side.title,
     base: side.base,
     ...(side.head ? { head: side.head } : {}),
+    cwd: top,
     patch,
     files: changes.files,
     ...(truncated || changes.truncated ? { truncated: true } : {}),

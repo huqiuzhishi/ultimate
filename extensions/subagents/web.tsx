@@ -32,6 +32,7 @@ import {
 } from '@/sdk'
 import type { ToolCallView } from '@/sdk'
 import { ConversationTask } from '../conversations/ui.tsx'
+import { OpenFileButton } from '../coding-tools/ui.tsx'
 import { stateLabel, useWorkspaceConversations as useConversations } from '../workspaces/ui.tsx'
 import type { Workspace as Isolate, LandResult } from '../workspaces/types.ts'
 import { DefinitionDialog, Definitions } from './definitions.tsx'
@@ -268,6 +269,7 @@ function Landed({ output }: { output: string }) {
                       <span className="text-diff-del">−{file.removed}</span>
                     </span>
                   )}
+                  <OpenFileButton path={file.path} />
                 </li>
               )
             })}

@@ -7,21 +7,36 @@ import type { PointerEvent } from 'react'
 import {
   cn,
   defineWebExtension,
+  provide,
   shortenPath,
   useConversation,
   useSystem,
   useUltimate,
   useViewport,
 } from '@/sdk'
+import { OpenInTerminal } from '../coding-tools/ui.tsx'
+import type { TerminalFileTarget } from '../coding-tools/ui.tsx'
 
 const STORAGE = 'ultimate.terminal'
 const CHANGED = 'ultimate:terminal-state'
+const OPEN_FILE = 'ultimate:terminal-open-file'
 type Placement = 'top' | 'left'
 type DrawerState = { open: boolean; placement: Placement; topSize: number; leftSize: number }
 const defaults: DrawerState = { open: false, placement: 'top', topSize: 300, leftSize: 480 }
 const localPage = () =>
   ['127.0.0.1', 'localhost', '::1'].includes(location.hostname) ||
   location.hostname.endsWith('.localhost')
+const terminalSurface = (surface: string) => surface === 'agent' || surface === 'review'
+
+let pendingOpen: TerminalFileTarget | undefined
+
+function openInTerminal(target: TerminalFileTarget) {
+  if (!localPage() || !target.path) return
+  pendingOpen = target
+  const current = stored()
+  if (!current.open) save({ ...current, open: true })
+  window.dispatchEvent(new Event(OPEN_FILE))
+}
 
 function stored(): DrawerState {
   try {
@@ -66,7 +81,7 @@ function HeaderToggle() {
   const { id } = useConversation()
   const { surface } = useUltimate()
   const [drawer] = useDrawerState()
-  if (!localPage() || surface !== 'agent' || id === undefined) return null
+  if (!localPage() || !terminalSurface(surface) || id === undefined) return null
   return (
     <button
       aria-label="Toggle terminal"
@@ -147,6 +162,13 @@ function TerminalDrawer({
     const control = (value: object) =>
       socket?.readyState === WebSocket.OPEN &&
       socket.send(new TextEncoder().encode(JSON.stringify(value)))
+    const flushOpen = () => {
+      if (!pendingOpen || socket?.readyState !== WebSocket.OPEN) return
+      const next = pendingOpen
+      pendingOpen = undefined
+      control({ open: next })
+      terminal.focus()
+    }
     const connect = () => {
       clearTimeout(timer)
       if (disposed) return
@@ -165,6 +187,7 @@ function TerminalDrawer({
         attempts = 0
         setConnection('connected')
         control({ resize: [terminal.cols, terminal.rows] })
+        flushOpen()
         terminal.focus()
       })
       socket.addEventListener('message', (event) => terminal.write(event.data as string))
@@ -211,10 +234,24 @@ function TerminalDrawer({
       attributes: true,
       attributeFilter: ['class', 'style'],
     })
+    const onOpenFile = () => {
+      if (!pendingOpen) return
+      if (socket?.readyState === WebSocket.OPEN) flushOpen()
+      else if (
+        !socket ||
+        socket.readyState === WebSocket.CLOSED ||
+        socket.readyState === WebSocket.CLOSING
+      ) {
+        attempts = 0
+        connect()
+      }
+    }
+    window.addEventListener(OPEN_FILE, onOpenFile)
     connect()
     return () => {
       disposed = true
       clearTimeout(timer)
+      window.removeEventListener(OPEN_FILE, onOpenFile)
       observer.disconnect()
       theme.disconnect()
       input.dispose()
@@ -368,12 +405,19 @@ export default defineWebExtension({
     'agent.top': [TerminalTop],
     'agent.left': [TerminalLeft],
   },
+  provides: [
+    provide(OpenInTerminal, (target) => {
+      const { id } = useConversation()
+      if (!localPage() || id === undefined || !target.path) return undefined
+      return () => openInTerminal(target)
+    }),
+  ],
   commands: [
     {
       id: 'terminal.toggle',
       title: 'Toggle terminal',
       when: (context) =>
-        localPage() && context.surface === 'agent' && context.conversationId !== undefined,
+        localPage() && terminalSurface(context.surface) && context.conversationId !== undefined,
       run: toggle,
     },
   ],

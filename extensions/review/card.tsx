@@ -1,6 +1,7 @@
 import type { EntryRecord } from '@earendil-works/pi-durable'
 import { FileDiffIcon } from 'lucide-react'
 import { Fold } from '@/sdk'
+import { OpenFileButton } from '../coding-tools/ui.tsx'
 import { Lines } from './comment.tsx'
 import { commentCount, location } from './comments.ts'
 import type { ReviewComments } from './comments.ts'
@@ -47,22 +48,25 @@ export function ReviewCard({ entry }: { entry: EntryRecord }) {
           <ol className="divide-y divide-border/60">
             {comments.map((comment, index) => (
               <li className="space-y-1.5 px-3 py-2.5" key={index}>
-                <button
-                  className="flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded border border-border/70 bg-background/60 px-1.5 py-0.5 font-mono text-[11px] hover:border-brand/50 hover:text-foreground"
-                  data-review-chip={location(comment)}
-                  onClick={() =>
-                    openReview(spec, {
-                      file: comment.file,
-                      line: comment.start,
-                      side: comment.side,
-                    })
-                  }
-                  title={`Open ${location(comment)} in Review`}
-                  type="button"
-                >
-                  <span className="min-w-0 truncate text-foreground/85">{comment.file}</span>
-                  <Lines className="shrink-0" comment={comment} />
-                </button>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    className="flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded border border-border/70 bg-background/60 px-1.5 py-0.5 font-mono text-[11px] hover:border-brand/50 hover:text-foreground"
+                    data-review-chip={location(comment)}
+                    onClick={() =>
+                      openReview(spec, {
+                        file: comment.file,
+                        line: comment.start,
+                        side: comment.side,
+                      })
+                    }
+                    title={`Open ${location(comment)} in Review`}
+                    type="button"
+                  >
+                    <span className="min-w-0 truncate text-foreground/85">{comment.file}</span>
+                    <Lines className="shrink-0" comment={comment} />
+                  </button>
+                  <OpenFileButton line={comment.start} path={comment.file} />
+                </div>
                 {comment.excerpt && (
                   <pre className="max-h-40 overflow-auto rounded border border-border/50 bg-background/50 px-2 py-1 font-mono text-[11.5px] leading-[1.55] text-muted-foreground">
                     {comment.excerpt}

@@ -37,6 +37,8 @@ export type ReviewDiff = {
   /** The full shas compared, where there are two commits: the merge base (or parent) and the tip. */
   base?: string
   head?: string
+  /** The checkout root on disk where these files live (a branch's worktree while ready, else the repository top). */
+  cwd?: string
   /** `git diff` output of every file that fits, for `parsePatchFiles` of `@pierre/diffs`. */
   patch: string
   files: ReviewFile[]

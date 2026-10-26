@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   localTerminalRequest,
+  nvimWindowArgs,
+  resolveTerminalFile,
   sessionName,
   terminalSize,
   tmuxArgs,
@@ -77,5 +79,44 @@ describe('terminal', () => {
     expect(terminalSize('1', 30, 300)).toBe(2)
     expect(terminalSize('999', 30, 300)).toBe(300)
     expect(terminalSize('nope', 30, 300)).toBe(30)
+  })
+
+  it('resolves file paths and builds shell-free tmux new-window nvim arguments', () => {
+    expect(resolveTerminalFile('extensions/terminal/web.tsx', '/work/tree', '/Users/me')).toBe(
+      '/work/tree/extensions/terminal/web.tsx',
+    )
+    expect(resolveTerminalFile('@src/a b.ts', '/work/tree', '/Users/me')).toBe(
+      '/work/tree/src/a b.ts',
+    )
+    expect(resolveTerminalFile('~/.ultimate/settings.json', '/work/tree', '/Users/me')).toBe(
+      '/Users/me/.ultimate/settings.json',
+    )
+    expect(() => resolveTerminalFile('   ', '/work/tree')).toThrow('Invalid terminal file path')
+    expect(() => resolveTerminalFile('bad\0path.ts', '/work/tree')).toThrow(
+      'Invalid terminal file path',
+    )
+
+    expect(
+      nvimWindowArgs('ultimate-test', 'test-7', "/work/it's here", "/work/it's here/-weird.ts", {
+        line: 42,
+        nvimBin: '/opt/nvim/bin/nvim',
+        pathEnv: '/opt/nvim/bin:/usr/bin',
+      }),
+    ).toEqual([
+      '-L',
+      'ultimate-test',
+      'new-window',
+      '-t',
+      'test-7',
+      '-c',
+      "/work/it's here",
+      '-e',
+      'PATH=/opt/nvim/bin:/usr/bin',
+      '--',
+      '/opt/nvim/bin/nvim',
+      '+42',
+      '--',
+      "/work/it's here/-weird.ts",
+    ])
   })
 })

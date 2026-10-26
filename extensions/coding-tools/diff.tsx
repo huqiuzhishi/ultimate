@@ -60,6 +60,15 @@ export function countChanges(rows: readonly DiffRow[]) {
   }
 }
 
+/** First 1-based line number of a change in `rows`, for opening an edited file at its first changed hunk. */
+export function firstChangedLine(rows: readonly DiffRow[]): number | undefined {
+  return (
+    rows.find((row) => row.type === 'add' && row.new !== undefined)?.new ??
+    rows.find((row) => row.new !== undefined)?.new ??
+    rows.find((row) => row.old !== undefined)?.old
+  )
+}
+
 const tone = {
   add: 'bg-diff-add/10',
   del: 'bg-diff-del/10',

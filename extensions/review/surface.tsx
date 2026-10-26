@@ -33,6 +33,7 @@ import {
   useViewport,
 } from '@/sdk'
 import { Address } from '../messages/ui.tsx'
+import { OpenFileButton } from '../coding-tools/ui.tsx'
 import { compareUrl } from '../../lib/compare.ts'
 import { useGithubRepo } from '../workspaces/ui.tsx'
 import { Composer, DraftCard } from './comment.tsx'
@@ -109,6 +110,9 @@ function byDirectory(files: ReviewFile[]) {
 }
 const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 const anchor = (path: string) => `review-file-${path}`
+const resolveReviewPath = (cwd: string | undefined, path: string) =>
+  cwd ? `${cwd.replace(/\/+$/, '')}/${path}` : path
+const firstHunkLine = (meta: FileDiffMetadata | undefined) => meta?.hunks?.[0]?.additionStart
 
 function Counts({ additions, deletions }: { additions: number; deletions: number }) {
   return (
@@ -119,7 +123,17 @@ function Counts({ additions, deletions }: { additions: number; deletions: number
   )
 }
 
-function FileList({ files, onPick }: { files: ReviewFile[]; onPick: (path: string) => void }) {
+function FileList({
+  files,
+  parsed,
+  cwd,
+  onPick,
+}: {
+  files: ReviewFile[]
+  parsed: Map<string, FileDiffMetadata>
+  cwd?: string
+  onPick: (path: string) => void
+}) {
   return (
     <nav className="w-64 shrink-0 overflow-y-auto border-r border-border/70 bg-sidebar py-1.5">
       {byDirectory(files).map(([directory, items]) => (
@@ -135,23 +149,32 @@ function FileList({ files, onPick }: { files: ReviewFile[]; onPick: (path: strin
           {items.map((file) => {
             const [letter, tone] = status[file.status]
             return (
-              <button
-                className="flex w-full cursor-pointer items-center gap-2 px-3 py-0.5 text-left hover:bg-accent/60"
-                key={file.path}
-                onClick={() => onPick(file.path)}
-                title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
-                type="button"
-              >
-                <span className={cn('w-2.5 shrink-0 font-mono text-[10.5px]', tone)}>{letter}</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground/90">
-                  {fileName(file.path)}
-                </span>
-                {file.binary ? (
-                  <span className="font-mono text-[10.5px] text-muted-foreground">bin</span>
-                ) : (
-                  <Counts additions={file.additions} deletions={file.deletions} />
+              <div className="flex items-center gap-1.5 pr-2 hover:bg-accent/60" key={file.path}>
+                <button
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-0.5 pr-1 pl-3 text-left"
+                  onClick={() => onPick(file.path)}
+                  title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
+                  type="button"
+                >
+                  <span className={cn('w-2.5 shrink-0 font-mono text-[10.5px]', tone)}>
+                    {letter}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground/90">
+                    {fileName(file.path)}
+                  </span>
+                  {file.binary ? (
+                    <span className="font-mono text-[10.5px] text-muted-foreground">bin</span>
+                  ) : (
+                    <Counts additions={file.additions} deletions={file.deletions} />
+                  )}
+                </button>
+                {file.status !== 'deleted' && (
+                  <OpenFileButton
+                    line={firstHunkLine(parsed.get(file.path))}
+                    path={resolveReviewPath(cwd, file.path)}
+                  />
                 )}
-              </button>
+              </div>
             )
           })}
         </div>
@@ -191,12 +214,13 @@ function FileMenu({ files, onPick }: { files: ReviewFile[]; onPick: (path: strin
 }
 
 /** A file whose hunks were left out: binary, a type change, a new symlink, or too large to show. */
-function Placeholder({ file }: { file: ReviewFile }) {
+function Placeholder({ file, cwd }: { file: ReviewFile; cwd?: string }) {
   return (
     <div className="rounded-md border border-border/70 bg-card/40">
       <div className="flex items-center gap-2 border-b border-border/70 px-4 py-2 font-mono text-[12px]">
         <span className="min-w-0 flex-1 truncate">{file.path}</span>
         {!file.binary && <Counts additions={file.additions} deletions={file.deletions} />}
+        {file.status !== 'deleted' && <OpenFileButton path={resolveReviewPath(cwd, file.path)} />}
       </div>
       <p className="px-4 py-3 font-mono text-[11.5px] text-muted-foreground">
         {file.binary
@@ -213,6 +237,8 @@ function Placeholder({ file }: { file: ReviewFile }) {
 
 /** One file's diff, with its draft comments under their lines and the composer under a selection. */
 function CommentedDiff({
+  file,
+  cwd,
   meta,
   options,
   drafts,
@@ -221,6 +247,8 @@ function CommentedDiff({
   onWrite,
   update,
 }: {
+  file: ReviewFile
+  cwd?: string
   meta: FileDiffMetadata
   options: FileDiffOptions<Note, undefined>
   drafts: Draft[]
@@ -267,12 +295,18 @@ function CommentedDiff({
     [options, meta.name, onWrite],
   )
   const editing = mine?.id ? drafts.find((draft) => draft.id === mine.id) : undefined
+  const openLine = mine?.range.start ?? marked?.line ?? firstHunkLine(meta)
   return (
     <FileDiff<Note>
       className="block overflow-hidden rounded-md border border-border/70"
       fileDiff={meta}
       lineAnnotations={annotations}
       options={fileOptions}
+      renderHeaderMetadata={
+        file.status !== 'deleted'
+          ? () => <OpenFileButton line={openLine} path={resolveReviewPath(cwd, file.path)} />
+          : undefined
+      }
       renderAnnotation={(annotation) => {
         const note = annotation.metadata
         if ('draft' in note)
@@ -392,7 +426,7 @@ function Diffs({
   const byFile = Map.groupBy(drafts.comments, (draft) => draft.file)
   return (
     <>
-      {!phone && <FileList files={diff.files} onPick={pick} />}
+      {!phone && <FileList cwd={diff.cwd} files={diff.files} onPick={pick} parsed={parsed} />}
       <div className="flex min-w-0 flex-1 flex-col">
         {phone && <FileMenu files={diff.files} onPick={pick} />}
         {diff.truncated && (
@@ -411,7 +445,9 @@ function Diffs({
               <section className="scroll-mt-3" id={anchor(file.path)} key={file.path}>
                 {meta ? (
                   <CommentedDiff
+                    cwd={diff.cwd}
                     drafts={byFile.get(file.path) ?? []}
+                    file={file}
                     marked={marked?.file === file.path ? marked : undefined}
                     meta={meta}
                     onWrite={setWriting}
@@ -420,7 +456,7 @@ function Diffs({
                     writing={writing}
                   />
                 ) : (
-                  <Placeholder file={file} />
+                  <Placeholder cwd={diff.cwd} file={file} />
                 )}
               </section>
             )

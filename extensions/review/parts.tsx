@@ -1,7 +1,7 @@
 import { FileDiffIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Header, StatusLine } from '@/sdk'
+import { Header, Slot, StatusLine } from '@/sdk'
 
 /** The surface's frame: its header with `controls`, the body, the status line. */
 export function Frame({ controls, children }: { controls?: ReactNode; children: ReactNode }) {
@@ -14,7 +14,11 @@ export function Frame({ controls, children }: { controls?: ReactNode; children: 
         </span>
         {controls}
       </Header>
-      <div className="flex min-h-0 flex-1">{children}</div>
+      <Slot name="agent.top" />
+      <div className="flex min-h-0 flex-1">
+        <Slot name="agent.left" />
+        {children}
+      </div>
       <StatusLine />
     </>
   )
