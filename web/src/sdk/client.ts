@@ -32,7 +32,12 @@ function writeConversation(id: number, replace: boolean) {
 /** The page's one live stream and its replica. */
 export const store = createStore({
   ui: {
-    theme: localStorage.getItem('ultimate.theme') === 'light' ? 'light' : 'dark',
+    theme:
+      localStorage.getItem('ultimate.theme') === 'light' ||
+      (localStorage.getItem('ultimate.theme') !== 'dark' &&
+        !document.documentElement.classList.contains('dark'))
+        ? 'light'
+        : 'dark',
   },
   onFallback: () => {
     replaceSelection = true
@@ -98,10 +103,16 @@ store.subscribe(() => {
   // The theme is a preference of this browser.
   localStorage.setItem('ultimate.theme', ui.theme)
   document.documentElement.classList.toggle('dark', ui.theme === 'dark')
-  // The browser bar and the installed app's chrome take the page background (web/index.html).
-  document
-    .querySelector('meta[name=theme-color]')
-    ?.setAttribute('content', ui.theme === 'dark' ? '#111112' : '#f9fafb')
+  // The browser bar and the installed app's chrome take the page background (web/index.html) unless a theme preset overrides it.
+  if (
+    !document.documentElement.dataset.theme ||
+    document.documentElement.dataset.theme === 'ultimate-dark' ||
+    document.documentElement.dataset.theme === 'ultimate-light'
+  ) {
+    document
+      .querySelector('meta[name=theme-color]')
+      ?.setAttribute('content', ui.theme === 'dark' ? '#111112' : '#f9fafb')
+  }
 })
 /** The next selection replaces the current history entry rather than pushing one, as a redirect does. */
 export function replaceNextSelection() {

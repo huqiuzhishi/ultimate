@@ -18,17 +18,86 @@
     <title>Ultimate</title>
     <style>
       html {
-        background: oklch(0.985 0.002 270);
+        background: var(--background, oklch(0.985 0.002 270));
       }
       html.dark {
-        background: oklch(0.178 0.003 270);
+        background: var(--background, oklch(0.178 0.003 270));
       }
     </style>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <script>
-      if (localStorage.getItem('ultimate.theme') === 'light') {
-        document.documentElement.classList.remove('dark')
-        document.querySelector('meta[name=theme-color]').content = '#f9fafb'
+      {
+        const themes = {
+          'ultimate-dark': ['dark', '#111112'],
+          'cursor-dark': ['dark', '#141414'],
+          rose: ['dark', '#161011'],
+          'catppuccin-mocha': ['dark', '#1e1e2e'],
+          gruvbox: ['dark', '#282828'],
+          dracula: ['dark', '#282a36'],
+          'tokyo-night': ['dark', '#1a1b26'],
+          nord: ['dark', '#2e3440'],
+          'one-dark': ['dark', '#282c34'],
+          'solarized-dark': ['dark', '#002b36'],
+          'github-dark': ['dark', '#0d1117'],
+          'ultimate-light': ['light', '#f9fafb'],
+          'warm-light': ['light', '#faf7f2'],
+          'catppuccin-latte': ['light', '#eff1f5'],
+          'gruvbox-light': ['light', '#fbf1c7'],
+          'solarized-light': ['light', '#fdf6e3'],
+          'github-light': ['light', '#ffffff'],
+        }
+        const sansFallback = "'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif"
+        const monoFallback =
+          "'JetBrains Mono', 'JetBrainsMono Nerd Font', 'JetBrainsMono NF', ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+        const uiFonts = {
+          inter: sansFallback,
+          system: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+          'dm-sans': `"DM Sans", ${sansFallback}`,
+          manrope: `"Manrope", ${sansFallback}`,
+          'ibm-plex-mono': `"IBM Plex Mono", ${monoFallback}`,
+          jetbrains: `"JetBrainsMono Nerd Font", "JetBrains Mono", ${monoFallback}`,
+          'jetbrains-nl': `"JetBrainsMonoNL Nerd Font", "JetBrains Mono NL", ${monoFallback}`,
+          mononoki: `"Mononoki Nerd Font", "Mononoki", ${monoFallback}`,
+          firacode: `"FiraCode Nerd Font", "Fira Code", ${monoFallback}`,
+          hack: `"Hack Nerd Font", "Hack", ${monoFallback}`,
+          dankmono: `"DankMono Nerd Font", "Dank Mono", ${monoFallback}`,
+        }
+        const codeFonts = {
+          'jetbrains-mono': monoFallback,
+          jetbrains: `"JetBrainsMono Nerd Font", "JetBrainsMono NF", ${monoFallback}`,
+          'jetbrains-nl': `"JetBrainsMonoNL Nerd Font", "JetBrains Mono NL", ${monoFallback}`,
+          'ibm-plex-mono': `"IBM Plex Mono", ${monoFallback}`,
+          firacode: `"FiraCode Nerd Font", "Fira Code", ${monoFallback}`,
+          hack: `"Hack Nerd Font", "Hack", ${monoFallback}`,
+          mononoki: `"Mononoki Nerd Font", "Mononoki", ${monoFallback}`,
+          dankmono: `"DankMono Nerd Font", "Dank Mono", ${monoFallback}`,
+          'system-mono': "ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
+        }
+        const root = document.documentElement
+        const storedPolarity = localStorage.getItem('ultimate.theme')
+        const rawPolarity =
+          storedPolarity === 'light' || storedPolarity === 'dark'
+            ? storedPolarity
+            : matchMedia('(prefers-color-scheme: light)').matches
+              ? 'light'
+              : 'dark'
+        const rawPreset = localStorage.getItem('ultimate.theme.preset')
+        const preset =
+          rawPreset && themes[rawPreset] && themes[rawPreset][0] === rawPolarity
+            ? rawPreset
+            : rawPolarity === 'light'
+              ? 'ultimate-light'
+              : 'ultimate-dark'
+        const [polarity, color] = themes[preset]
+        root.dataset.theme = preset
+        root.classList.toggle('dark', polarity === 'dark')
+        root.style.setProperty('--theme-preset', preset)
+        document.querySelector('meta[name=theme-color]').content = color
+        const uiFont = localStorage.getItem('ultimate.font.ui')
+        if (uiFont && uiFonts[uiFont]) root.style.setProperty('--font-sans', uiFonts[uiFont])
+        const codeFont = localStorage.getItem('ultimate.font.code')
+        if (codeFont && codeFonts[codeFont])
+          root.style.setProperty('--font-mono', codeFonts[codeFont])
       }
     </script>
   </head>

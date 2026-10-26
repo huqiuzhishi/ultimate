@@ -64,6 +64,7 @@
     "lib/context-usage.ts",
     "lib/entries.ts",
     "extensions/subagents/message-types.ts",
+    "extensions/theme/presets.ts",
     "test/web"
   ]
 }
