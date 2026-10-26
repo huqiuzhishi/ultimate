@@ -55,6 +55,26 @@ it('resets the stall timer on output but stops continuous output at the total li
   expect(vi.getTimerCount()).toBe(0)
 })
 
+it('keeps the timeout classification when process-group teardown fails', async () => {
+  vi.useFakeTimers()
+  vi.mocked(runGroup).mockImplementation(async (_program, _args, options) => {
+    if (!options.signal!.aborted)
+      await new Promise<void>((resolve) =>
+        options.signal!.addEventListener('abort', () => resolve(), { once: true }),
+      )
+    throw new Error('Process group 123 did not exit')
+  })
+  const ran = runLanderCheck('.', 'pnpm test', context, { stall: 1, total: 0.1 })
+  await vi.advanceTimersByTimeAsync(100)
+  await expect(ran).resolves.toMatchObject({
+    failure: expect.stringMatching(
+      /^Timed out after 0.1 s\nError: Process group 123 did not exit$/,
+    ),
+    timedOut: true,
+  })
+  expect(vi.getTimerCount()).toBe(0)
+})
+
 it('defaults to a 2-minute stall and a 10-minute total cap', async () => {
   hanging()
   const silent = runLanderCheck('.', 'sleep', context)
