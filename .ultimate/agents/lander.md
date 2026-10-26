@@ -1,7 +1,7 @@
 ---
 name: lander
 description: Ultimate's lander; fixes submissions that fail to land, then lands them after every check passes again.
-model: google/gemini-4-argon
+model: cursor/gpt-5.6-sol
 thinking: medium
 fast: true
 onFailure: fix
