@@ -148,6 +148,27 @@ export function getThemePreset(id: ThemePresetId): (typeof THEME_PRESETS)[number
   return THEME_PRESETS.find((preset) => preset.id === id) ?? THEME_PRESETS[0]
 }
 
+const GENERIC_FAMILIES = new Set(
+  [SANS_FALLBACK, MONO_FALLBACK, '-apple-system, BlinkMacSystemFont, system-ui']
+    .join(',')
+    .split(',')
+    .map(familyName),
+)
+
+function familyName(entry: string): string {
+  return entry.trim().replace(/^['"]|['"]$/g, '')
+}
+
+/** Families a font option needs installed locally: those before its built-in fallback stack. */
+export function localFamilies(font: FontPreset): string[] {
+  const families: string[] = []
+  for (const family of font.css.split(',').map(familyName)) {
+    if (GENERIC_FAMILIES.has(family)) break
+    families.push(family)
+  }
+  return families
+}
+
 export function getUiFont(id: UiFontId): (typeof UI_FONTS)[number] {
   return UI_FONTS.find((font) => font.id === id) ?? UI_FONTS[0]
 }

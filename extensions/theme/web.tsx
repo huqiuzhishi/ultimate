@@ -10,19 +10,57 @@ import {
   isCodeFontId,
   isThemePresetId,
   isUiFontId,
+  localFamilies,
   preferredPresetForPolarity,
   readStoredAppearance,
   saveAppearance,
   THEME_PRESETS,
   UI_FONTS,
 } from './presets.ts'
-import type { AppearanceState, CodeFontId, Polarity, ThemePresetId, UiFontId } from './presets.ts'
+import type {
+  AppearanceState,
+  CodeFontId,
+  FontPreset,
+  Polarity,
+  ThemePresetId,
+  UiFontId,
+} from './presets.ts'
 
 const CHANGED_EVENT = 'ultimate:appearance-changed'
 const OPEN_EVENT = 'ultimate:appearance-open'
 
 const darkPresets = THEME_PRESETS.filter((preset) => preset.polarity === 'dark')
 const lightPresets = THEME_PRESETS.filter((preset) => preset.polarity === 'light')
+
+// `document.fonts.check` reports true for local fonts that are not installed, so measure instead: an installed
+// family renders the sample at a different width than at least one generic fallback.
+let measure: CanvasRenderingContext2D | null | undefined
+function isInstalled(family: string): boolean {
+  measure ??= document.createElement('canvas').getContext('2d')
+  if (!measure) return true
+  const ctx = measure
+  const width = (font: string) => {
+    ctx.font = `32px ${font}`
+    return ctx.measureText('mmmmmmmmmmlli10OWQ@').width
+  }
+  return ['monospace', 'serif', 'sans-serif'].some(
+    (generic) => width(`"${family}", ${generic}`) !== width(generic),
+  )
+}
+
+function fontAvailable(font: FontPreset): boolean {
+  const families = localFamilies(font)
+  return families.length === 0 || families.some(isInstalled)
+}
+
+function FontOption({ font }: { font: FontPreset }) {
+  const available = fontAvailable(font)
+  return (
+    <option disabled={!available} value={font.id}>
+      {available ? font.label : `${font.label} (not installed)`}
+    </option>
+  )
+}
 
 function broadcastAppearance() {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(CHANGED_EVENT))
@@ -191,9 +229,7 @@ function AppearanceMenu() {
               value={state.uiFont}
             >
               {UI_FONTS.map((font) => (
-                <option key={font.id} value={font.id}>
-                  {font.label}
-                </option>
+                <FontOption font={font} key={font.id} />
               ))}
             </select>
           </label>
@@ -209,9 +245,7 @@ function AppearanceMenu() {
               value={state.codeFont}
             >
               {CODE_FONTS.map((font) => (
-                <option key={font.id} value={font.id}>
-                  {font.label}
-                </option>
+                <FontOption font={font} key={font.id} />
               ))}
             </select>
           </label>
