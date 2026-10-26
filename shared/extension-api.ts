@@ -64,6 +64,7 @@ export const defaultOff: readonly string[] = [
   'parallel',
   'tailscale',
   'health',
+  'llm-gateway',
   'classify',
   'phase',
   'sounds',
