@@ -8,17 +8,37 @@ import { defineExtension, defineTool, section } from '@earendil-works/pi-durable
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core'
 import type { ExtensionHost } from '../../server/extensions.ts'
 
-export async function browserBinary() {
-  const cache = join(homedir(), '.cache/ms-playwright')
+export async function browserBinary(home = homedir()) {
+  const caches = [join(home, '.cache/ms-playwright'), join(home, 'Library/Caches/ms-playwright')]
+  const cached = (
+    await Promise.all(
+      caches.map(async (cache) =>
+        (await readdir(cache).catch(() => []))
+          .filter(
+            (name) => name.startsWith('chromium-') || name.startsWith('chromium_headless_shell-'),
+          )
+          .toSorted()
+          .toReversed()
+          .flatMap((name) => [
+            join(cache, name, 'chrome-linux64/chrome'),
+            join(cache, name, 'chrome-linux/chrome'),
+            join(cache, name, 'chrome-mac/Chromium.app/Contents/MacOS/Chromium'),
+            join(cache, name, 'chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium'),
+            join(cache, name, 'chrome-linux64/headless_shell'),
+            join(cache, name, 'chrome-linux/headless_shell'),
+            join(cache, name, 'chrome-mac/headless_shell'),
+            join(cache, name, 'chrome-mac-arm64/headless_shell'),
+          ]),
+      ),
+    )
+  ).flat()
   const candidates = [
     process.env.ULTIMATE_CHROMIUM,
+    ...cached,
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
     '/usr/bin/chromium',
     '/usr/bin/google-chrome-stable',
-    ...(await readdir(cache).catch(() => []))
-      .filter((name) => name.startsWith('chromium-'))
-      .toSorted()
-      .toReversed()
-      .map((name) => join(cache, name, 'chrome-linux64/chrome')),
   ].filter((path): path is string => !!path)
   for (const path of candidates) {
     try {
@@ -29,7 +49,7 @@ export async function browserBinary() {
     }
   }
   throw new Error(
-    'No Chromium found. Set ULTIMATE_CHROMIUM or install /usr/bin/chromium, /usr/bin/google-chrome-stable, or ~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome.',
+    'No Chromium found. Set ULTIMATE_CHROMIUM, install Chrome or Chromium, or install Playwright Chromium.',
   )
 }
 
