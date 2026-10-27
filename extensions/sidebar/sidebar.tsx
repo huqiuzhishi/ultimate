@@ -50,7 +50,7 @@ import { LanderState } from './lander.tsx'
 import { StandingPhase, WaitingOnUser } from './ultimate.tsx'
 import { useSidebarState } from './state.tsx'
 import { topLevelRows } from './listed.ts'
-import { UnderUltimate, Unlisted } from './ui.tsx'
+import { ProjectHeader, UnderUltimate, Unlisted } from './ui.tsx'
 
 /** What the conversations below start in: the project's path from home, or `<project> #<worktree>`; the full path on hover. */
 function ProjectPath() {
@@ -517,7 +517,9 @@ function Tree({
           </div>
         </DialogContent>
       </Dialog>
-      <ProjectPath />
+      <Provided input={null} point={ProjectHeader}>
+        {(header) => header ?? <ProjectPath />}
+      </Provided>
       <nav aria-label="Conversations" className="flex flex-col gap-px">
         <div className="mb-1 border-b border-border/60 pb-1">
           {ultimate ? tree(ultimate) : standingRow(undefined)}

@@ -2,6 +2,8 @@
 import type { ReactNode } from 'react'
 import { definePoint } from '@/sdk'
 
+/** The project path above the conversation tree; project-switcher makes it interactive on loopback. */
+export const ProjectHeader = definePoint<null, ReactNode>('sidebar.project-header')
 /** Rows nested under @ultimate's row (`side-chat` lists its open side chats); input is @ultimate's conversation id. */
 export const UnderUltimate = definePoint<number | undefined, ReactNode>('sidebar.under-ultimate')
 /**
