@@ -1,4 +1,5 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf'
+import { BinaryReader, BinaryWriter, WireType } from '@bufbuild/protobuf/wire'
 import { afterEach, beforeAll, expect, it } from 'vitest'
 import { until } from './helpers.ts'
 import {
@@ -6,6 +7,7 @@ import {
   AgentServerMessageSchema,
   ExecServerMessageSchema,
   InteractionUpdateSchema,
+  McpToolDefinitionSchema,
   ReadArgsSchema,
   RequestContextArgsSchema,
   TextDeltaUpdateSchema,
@@ -22,8 +24,9 @@ import {
 // Pi upstream: pi-cursor-provider@0.1.11 proxy.ts — Cursor models call native tools (read, write, shell) instead of
 // the MCP tools offered; the proxy rejected them, so the model gave up ("DONE") without doing the work, and an exec
 // case its proto lacks got no answer, so heartbeats kept the turn open for ten minutes. The pnpm patch redirects
-// native read/write/shell to the client's tools, fails an unknown exec at once and passes the system prompt as
-// RequestContext.cloudRule. Drop with the patch when upstream does this.
+// native read/write/shell to the client's tools, answers Cursor's MCP state exec (field 36, newer than the proto) with
+// the client's tools, fails any other unknown exec at once and passes the system prompt as RequestContext.cloudRule.
+// Drop with the patch when upstream does this.
 
 type Bridge = ReturnType<BridgeFactory> & {
   sent: AgentClientMessage[]
@@ -210,6 +213,86 @@ it('redirects a native read to the client read tool and answers it with a typed 
   )
 })
 
+/** ExecServerMessage { id, exec_id, field `no`: payload, accept_hook_additional_contexts (55): true } */
+const newerExec = (id: number, no: number, payload: Uint8Array) => {
+  const body = new BinaryWriter()
+    .raw(
+      toBinary(
+        ExecServerMessageSchema,
+        create(ExecServerMessageSchema, { id, execId: `exec-${id}` }),
+      ),
+    )
+    .tag(no, WireType.LengthDelimited)
+    .bytes(payload)
+    .tag(55, WireType.Varint)
+    .bool(true)
+    .finish()
+  return new BinaryWriter().tag(2, WireType.LengthDelimited).bytes(body).finish() // AgentServerMessage.exec_server_message
+}
+
+const fields = (bytes: Uint8Array) => {
+  const reader = new BinaryReader(bytes)
+  const out: [number, Uint8Array][] = []
+  while (reader.pos < reader.len) {
+    const [no, wireType] = reader.tag()
+    out.push([
+      no,
+      wireType === WireType.LengthDelimited ? reader.bytes() : reader.skip(wireType, no),
+    ])
+  }
+  return out
+}
+
+it("answers Cursor's MCP state exec with the client's tools and keeps the turn going", async () => {
+  const response = fetch(url, {
+    method: 'POST',
+    body: JSON.stringify({
+      model: 'gpt-5.6-sol',
+      stream: true,
+      pi_session_id: 'conversation-c',
+      tools: [readTool],
+      messages: [{ role: 'user', content: 'Inspect the repository' }],
+    }),
+  })
+  const bridge = await firstBridge()
+  // McpStateExecArgs { server_identifiers: ["pi"] }
+  bridge.pushRaw(
+    newerExec(4, 36, new BinaryWriter().tag(1, WireType.LengthDelimited).string('pi').finish()),
+  )
+  await until(() => bridge.sent.some((message) => message.message.case === 'execClientMessage'))
+  const answer = bridge.sent.find((message) => message.message.case === 'execClientMessage')
+  expect(answer?.message.value).toMatchObject({ id: 4, execId: 'exec-4' })
+  const [[no, result]] = ((answer?.message.value as any)?.$unknown ?? []).map(
+    (field: { no: number; data: Uint8Array }) => [field.no, new BinaryReader(field.data).bytes()],
+  )
+  expect(no).toBe(36)
+  // McpStateExecResult.success (1) → McpStateSuccess.servers (1) → McpStateServer
+  const [[, success]] = fields(result)
+  const [[, server]] = fields(success)
+  const decoded = fields(server)
+  const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes)
+  expect(decoded.filter(([n]) => n <= 2).map(([, v]) => text(v))).toEqual(['pi', 'pi'])
+  expect(
+    decoded
+      .filter(([n]) => n === 5)
+      .map(([, v]) => fromBinary(McpToolDefinitionSchema, v))
+      .map(({ name, providerIdentifier }) => ({ name, providerIdentifier })),
+  ).toEqual([{ name: 'read', providerIdentifier: 'pi' }])
+
+  bridge.push({
+    case: 'interactionUpdate',
+    value: create(InteractionUpdateSchema, {
+      message: { case: 'textDelta', value: create(TextDeltaUpdateSchema, { text: 'Looking.' }) },
+    }),
+  })
+  bridge.finish()
+  const final = await events(await response)
+  expect(final.map((event) => event.choices[0]?.delta.content ?? '').join('')).toBe('Looking.')
+  expect(final.find((event) => event.choices[0]?.finish_reason)?.choices[0]?.finish_reason).toBe(
+    'stop',
+  )
+})
+
 it('fails the turn at once when Cursor asks for an exec this proxy cannot answer', async () => {
   const response = fetch(url, {
     method: 'POST',
@@ -222,16 +305,12 @@ it('fails the turn at once when Cursor asks for an exec this proxy cannot answer
     }),
   })
   const bridge = await firstBridge()
-  // ExecServerMessage { id: 3, exec_id: "exec-3", field 36 (an exec newer than this proto): {} }
-  const unknownExec = Buffer.concat([
-    toBinary(ExecServerMessageSchema, create(ExecServerMessageSchema, { id: 3, execId: 'exec-3' })),
-    Buffer.from([0xa2, 0x02, 0x00]),
-  ])
-  bridge.pushRaw(Buffer.concat([Buffer.from([0x12, unknownExec.length]), unknownExec]))
+  // Field 38 (smart_mode_classifier_args, an exec newer than this proto) is not answered.
+  bridge.pushRaw(newerExec(3, 38, new Uint8Array()))
   const result = await events(await response)
   expect(result.find((event) => event.choices[0]?.finish_reason)?.choices[0]).toMatchObject({
     finish_reason: 'error',
-    delta: { content: expect.stringContaining('unknown field 36') },
+    delta: { content: expect.stringContaining('(unknown field 38)') },
   })
   expect(bridge.alive).toBe(false)
   expect(bridge.sent.at(-1)?.message.value).toMatchObject({ action: { case: 'cancelAction' } })
