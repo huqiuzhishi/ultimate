@@ -243,55 +243,60 @@ const fields = (bytes: Uint8Array) => {
   return out
 }
 
-it("answers Cursor's MCP state exec with the client's tools and keeps the turn going", async () => {
-  const response = fetch(url, {
-    method: 'POST',
-    body: JSON.stringify({
-      model: 'gpt-5.6-sol',
-      stream: true,
-      pi_session_id: 'conversation-c',
-      tools: [readTool],
-      messages: [{ role: 'user', content: 'Inspect the repository' }],
-    }),
-  })
-  const bridge = await firstBridge()
-  // McpStateExecArgs { server_identifiers: ["pi"] }
-  bridge.pushRaw(
-    newerExec(4, 36, new BinaryWriter().tag(1, WireType.LengthDelimited).string('pi').finish()),
-  )
-  await until(() => bridge.sent.some((message) => message.message.case === 'execClientMessage'))
-  const answer = bridge.sent.find((message) => message.message.case === 'execClientMessage')
-  expect(answer?.message.value).toMatchObject({ id: 4, execId: 'exec-4' })
-  const [[no, result]] = ((answer?.message.value as any)?.$unknown ?? []).map(
-    (field: { no: number; data: Uint8Array }) => [field.no, new BinaryReader(field.data).bytes()],
-  )
-  expect(no).toBe(36)
-  // McpStateExecResult.success (1) → McpStateSuccess.servers (1) → McpStateServer
-  const [[, success]] = fields(result)
-  const [[, server]] = fields(success)
-  const decoded = fields(server)
-  const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes)
-  expect(decoded.filter(([n]) => n <= 2).map(([, v]) => text(v))).toEqual(['pi', 'pi'])
-  expect(
-    decoded
-      .filter(([n]) => n === 5)
-      .map(([, v]) => fromBinary(McpToolDefinitionSchema, v))
-      .map(({ name, providerIdentifier }) => ({ name, providerIdentifier })),
-  ).toEqual([{ name: 'read', providerIdentifier: 'pi' }])
+// Like the Cursor CLI's filterToRequestedServers: matching identifiers filter, none or no match get every server.
+it.each([[['pi']], [[]], [['github']]])(
+  "answers Cursor's MCP state exec for %j with the connected pi server and keeps the turn going",
+  async (serverIdentifiers) => {
+    const response = fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({
+        model: 'gpt-5.6-sol',
+        stream: true,
+        pi_session_id: `conversation-c-${serverIdentifiers.join()}`,
+        tools: [readTool],
+        messages: [{ role: 'user', content: 'Inspect the repository' }],
+      }),
+    })
+    const bridge = await firstBridge()
+    const args = new BinaryWriter() // McpStateExecArgs.server_identifiers
+    for (const id of serverIdentifiers) args.tag(1, WireType.LengthDelimited).string(id)
+    bridge.pushRaw(newerExec(4, 36, args.finish()))
+    await until(() => bridge.sent.some((message) => message.message.case === 'execClientMessage'))
+    const answer = bridge.sent.find((message) => message.message.case === 'execClientMessage')
+    expect(answer?.message.value).toMatchObject({ id: 4, execId: 'exec-4' })
+    const [[no, result]] = ((answer?.message.value as any)?.$unknown ?? []).map(
+      (field: { no: number; data: Uint8Array }) => [field.no, new BinaryReader(field.data).bytes()],
+    )
+    expect(no).toBe(36)
+    // McpStateExecResult.success (1) → McpStateSuccess.servers (1) → McpStateServer
+    const [[, success]] = fields(result)
+    const servers = fields(success)
+    expect(servers).toHaveLength(1)
+    const decoded = fields(servers[0][1])
+    const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes)
+    expect(decoded.filter(([n]) => n <= 2).map(([, v]) => text(v))).toEqual(['pi', 'pi'])
+    expect(
+      decoded
+        .filter(([n]) => n === 5)
+        .map(([, v]) => fromBinary(McpToolDefinitionSchema, v))
+        .map(({ name, providerIdentifier }) => ({ name, providerIdentifier })),
+    ).toEqual([{ name: 'read', providerIdentifier: 'pi' }])
+    expect(decoded.filter(([n]) => n === 7).map(([, v]) => text(v))).toEqual(['connected'])
 
-  bridge.push({
-    case: 'interactionUpdate',
-    value: create(InteractionUpdateSchema, {
-      message: { case: 'textDelta', value: create(TextDeltaUpdateSchema, { text: 'Looking.' }) },
-    }),
-  })
-  bridge.finish()
-  const final = await events(await response)
-  expect(final.map((event) => event.choices[0]?.delta.content ?? '').join('')).toBe('Looking.')
-  expect(final.find((event) => event.choices[0]?.finish_reason)?.choices[0]?.finish_reason).toBe(
-    'stop',
-  )
-})
+    bridge.push({
+      case: 'interactionUpdate',
+      value: create(InteractionUpdateSchema, {
+        message: { case: 'textDelta', value: create(TextDeltaUpdateSchema, { text: 'Looking.' }) },
+      }),
+    })
+    bridge.finish()
+    const final = await events(await response)
+    expect(final.map((event) => event.choices[0]?.delta.content ?? '').join('')).toBe('Looking.')
+    expect(final.find((event) => event.choices[0]?.finish_reason)?.choices[0]?.finish_reason).toBe(
+      'stop',
+    )
+  },
+)
 
 it('fails the turn at once when Cursor asks for an exec this proxy cannot answer', async () => {
   const response = fetch(url, {

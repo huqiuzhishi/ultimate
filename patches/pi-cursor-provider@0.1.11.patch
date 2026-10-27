@@ -1,5 +1,5 @@
 diff --git a/proxy.ts b/proxy.ts
-index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f5b63f21e 100644
+index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..a50f770e5e686f18c27669ed87ab0b87b114fae0 100644
 --- a/proxy.ts
 +++ b/proxy.ts
 @@ -6,6 +6,7 @@
@@ -130,7 +130,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
    // Reject native Cursor tools so model falls back to MCP tools
    if (execCase === "readArgs") {
      const args = (execMsg as any).message.value;
-@@ -1328,12 +1356,142 @@ function handleExecMessage(
+@@ -1328,12 +1356,144 @@ function handleExecMessage(
      return;
    }
  
@@ -163,8 +163,10 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
 +
 +/**
 + * Answer Cursor's MCP state exec (McpStateExecArgs: repeated server_identifiers = 1, kick_only = 2) with
-+ * McpStateExecResult.success: the client's tools as the one server "pi" they are offered under. Hand-encoded because
-+ * the bundled proto predates these messages.
++ * McpStateExecResult.success: the client's tools as the one server "pi" they are offered under, always connected.
++ * Like the Cursor CLI's filterToRequestedServers, requested identifiers filter the servers when any match and otherwise
++ * get the full state, so with one server it is always listed. Hand-encoded because the bundled proto predates these
++ * messages.
 + */
 +function sendMcpStateResult(
 +  execMsg: ExecServerMessage,
@@ -185,8 +187,8 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
 +
 +  const server = new BinaryWriter().uint32(10).string("pi").uint32(18).string("pi"); // server_name, server_identifier
 +  for (const tool of mcpTools) server.uint32(42).bytes(toBinary(McpToolDefinitionSchema, tool)); // tools
-+  const success = new BinaryWriter();
-+  if (serverIdentifiers.length === 0 || serverIdentifiers.includes("pi")) success.uint32(10).bytes(server.finish()); // servers
++  server.uint32(58).string("connected"); // status
++  const success = new BinaryWriter().uint32(10).bytes(server.finish()); // servers
 +  const result = new BinaryWriter().uint32(10).bytes(success.finish()).finish(); // McpStateExecResult.success
 +
 +  const execClientMessage = create(ExecClientMessageSchema, { id: (execMsg as any).id, execId: (execMsg as any).execId });
@@ -279,7 +281,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
    }
  }
  
-@@ -1580,6 +1738,7 @@ function handleStreamingResponse(
+@@ -1580,6 +1740,7 @@ function handleStreamingResponse(
      heartbeatTimer,
      payload.blobStore,
      payload.mcpTools,
@@ -287,7 +289,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
      modelId,
      bridgeKey,
      convKey,
-@@ -1623,6 +1782,7 @@ function writeSSEStream(
+@@ -1623,6 +1784,7 @@ function writeSSEStream(
    heartbeatTimer: ReturnType<typeof setInterval>,
    blobStore: Map<string, Uint8Array>,
    mcpTools: McpToolDefinition[],
@@ -295,7 +297,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
    modelId: string,
    bridgeKey: string,
    convKey: string,
-@@ -1693,7 +1853,7 @@ function writeSSEStream(
+@@ -1693,7 +1855,7 @@ function writeSSEStream(
        try {
          const serverMessage = fromBinary(AgentServerMessageSchema, messageBytes);
          processServerMessage(
@@ -304,7 +306,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
            (data) => bridge.write(data),
            state,
            (text, isThinking) => {
-@@ -1735,7 +1895,7 @@ function writeSSEStream(
+@@ -1735,7 +1897,7 @@ function writeSSEStream(
              }));
  
              activeBridges.set(bridgeKey, {
@@ -313,7 +315,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
              });
              debugLog("stream.tool_call_pause", { requestId, bridgeKey, exec, pendingExecs: state.pendingExecs, currentTurn });
  
-@@ -1743,6 +1903,18 @@ function writeSSEStream(
+@@ -1743,6 +1905,18 @@ function writeSSEStream(
              sendDone();
              closeResponse();
            },
@@ -332,7 +334,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
            (checkpointBytes) => {
              latestCheckpoint = checkpointBytes;
              const stored = conversationStates.get(convKey);
-@@ -1815,6 +1987,7 @@ export function writeSSEStreamForTests(args: {
+@@ -1815,6 +1989,7 @@ export function writeSSEStreamForTests(args: {
    heartbeatTimer: ReturnType<typeof setInterval>;
    blobStore?: Map<string, Uint8Array>;
    mcpTools?: McpToolDefinition[];
@@ -340,7 +342,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
    modelId: string;
    bridgeKey: string;
    convKey: string;
-@@ -1829,6 +2002,7 @@ export function writeSSEStreamForTests(args: {
+@@ -1829,6 +2004,7 @@ export function writeSSEStreamForTests(args: {
      args.heartbeatTimer,
      args.blobStore ?? new Map(),
      args.mcpTools ?? [],
@@ -348,7 +350,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
      args.modelId,
      args.bridgeKey,
      args.convKey,
-@@ -1854,7 +2028,7 @@ function handleToolResultResume(
+@@ -1854,7 +2030,7 @@ function handleToolResultResume(
    stream: boolean,
    requestId?: string,
  ): void {
@@ -357,7 +359,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
    debugLog("tool_resume.start", { requestId, bridgeKey, convKey, toolResults, pendingExecs, currentTurn });
  
    for (const result of toolResults) {
-@@ -1872,6 +2046,7 @@ function handleToolResultResume(
+@@ -1872,6 +2048,7 @@ function handleToolResultResume(
        heartbeatTimer,
        blobStore,
        mcpTools,
@@ -365,7 +367,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
        pendingExecs,
        currentTurn,
      });
-@@ -1883,6 +2058,11 @@ function handleToolResultResume(
+@@ -1883,6 +2060,11 @@ function handleToolResultResume(
    for (const exec of pendingExecs) {
      const result = turnResults.get(exec.toolCallId);
      if (!result) continue;
@@ -377,7 +379,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
      const mcpResult = create(McpResultSchema, {
        result: {
          case: "success",
-@@ -1917,6 +2097,7 @@ function handleToolResultResume(
+@@ -1917,6 +2099,7 @@ function handleToolResultResume(
      heartbeatTimer,
      blobStore,
      mcpTools,
@@ -385,7 +387,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
      modelId,
      bridgeKey,
      convKey,
-@@ -1972,7 +2153,7 @@ async function handleNonStreamingResponse(
+@@ -1972,7 +2155,7 @@ async function handleNonStreamingResponse(
          try {
            const serverMessage = fromBinary(AgentServerMessageSchema, messageBytes);
            processServerMessage(
@@ -394,7 +396,7 @@ index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..0e15a248c1b58e93866a095d541b922f
              (data) => bridge.write(data),
              state,
              (text, isThinking) => {
-@@ -1982,6 +2163,13 @@ async function handleNonStreamingResponse(
+@@ -1982,6 +2165,13 @@ async function handleNonStreamingResponse(
                appendAssistantTextToTurn(currentTurn, content);
              },
              () => {},
