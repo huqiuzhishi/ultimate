@@ -1,5 +1,5 @@
 /** Project switcher UI for the sidebar's local project path trigger. */
-import { ChevronDownIcon, ExternalLinkIcon, FolderIcon, PlayIcon, SquareIcon } from 'lucide-react'
+import { ChevronDownIcon, ExternalLinkIcon, FolderIcon, PlayIcon } from 'lucide-react'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
@@ -11,25 +11,23 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { api, cn, errorMessage, projectTitle, useAction, useSystem } from '@/sdk'
-import { ListAction, StartAction, StopAction } from './refs.ts'
+import { ListAction, StartAction } from './refs.ts'
 import type { Project } from './refs.ts'
 
 const isLoopback = (hostname: string) =>
   /^(127\.0\.0\.1|localhost|\[::1\])$|\.localhost$/.test(hostname)
 
-type Pending = { action: 'start' | 'stop'; root: string } | undefined
+type Pending = { root: string } | undefined
 
-/** Dense rows for known projects, with no lifecycle control for the current backend. */
+/** Dense rows for known projects; opening always delegates to the supervisor launcher. */
 export function ProjectList({
   projects,
   pending,
   onStart,
-  onStop,
 }: {
   projects: Project[]
   pending: Pending
   onStart: (project: Project) => void
-  onStop: (project: Project) => void
 }) {
   return (
     <div className="flex flex-col gap-0.5">
@@ -63,37 +61,20 @@ export function ProjectList({
             )}
             {project.current ? (
               <span className="font-mono text-[10.5px] text-muted-foreground">Current</span>
-            ) : project.running && project.root ? (
-              <span className="flex items-center gap-1">
-                <a
-                  aria-label={`Open ${project.name}`}
-                  className="rounded-sm p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-                  href={project.running.url}
-                  title={`Open ${project.name}`}
-                >
-                  <ExternalLinkIcon className="size-3.5" />
-                </a>
-                <button
-                  aria-label={`Stop ${project.name}`}
-                  className="rounded-sm p-1 text-muted-foreground transition-colors hover:bg-background hover:text-error disabled:opacity-50"
-                  disabled={busy}
-                  onClick={() => onStop(project)}
-                  title={`Stop ${project.name}`}
-                  type="button"
-                >
-                  <SquareIcon className="size-3" />
-                </button>
-              </span>
             ) : project.root ? (
               <button
-                aria-label={`Start ${project.name}`}
+                aria-label={`${project.running ? 'Open' : 'Start'} ${project.name}`}
                 className="rounded-sm p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
                 disabled={busy}
                 onClick={() => onStart(project)}
-                title={`Start ${project.name}`}
+                title={`${project.running ? 'Open' : 'Start'} ${project.name}`}
                 type="button"
               >
-                <PlayIcon className="size-3.5" />
+                {project.running ? (
+                  <ExternalLinkIcon className="size-3.5" />
+                ) : (
+                  <PlayIcon className="size-3.5" />
+                )}
               </button>
             ) : null}
           </div>
@@ -128,14 +109,12 @@ export function ProjectSwitcher() {
       </div>
     )
 
-  const run = async (action: 'start' | 'stop', project: Project) => {
+  const run = async (project: Project) => {
     if (!project.root) return false
     setError(undefined)
-    setPending({ action, root: project.root })
+    setPending({ root: project.root })
     try {
-      if (action === 'start') await api.action(StartAction, { root: project.root })
-      else if (project.running)
-        await api.action(StopAction, { root: project.root, pid: project.running.pid })
+      await api.action(StartAction, { root: project.root })
       await inventory.refetch()
       return true
     } catch (failure) {
@@ -148,7 +127,7 @@ export function ProjectSwitcher() {
   const openPath = async (event: FormEvent) => {
     event.preventDefault()
     const project = { root: path, name: path, current: false }
-    if (await run('start', project)) setDialog(false)
+    if (await run(project)) setDialog(false)
   }
 
   return (
@@ -171,8 +150,7 @@ export function ProjectSwitcher() {
           </DropdownMenuLabel>
           {inventory.data && (
             <ProjectList
-              onStart={(project) => void run('start', project)}
-              onStop={(project) => void run('stop', project)}
+              onStart={(project) => void run(project)}
               pending={pending}
               projects={inventory.data}
             />
@@ -205,7 +183,7 @@ export function ProjectSwitcher() {
               value={path}
             />
             {error && <div className="text-[12px] text-error">{error}</div>}
-            <Button disabled={!path.trim() || pending?.action === 'start'} type="submit">
+            <Button disabled={!path.trim() || pending !== undefined} type="submit">
               Open
             </Button>
           </form>

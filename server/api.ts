@@ -22,7 +22,7 @@ import { clampThinkingLevel, getSupportedThinkingLevels } from '@earendil-works/
 import { Metadata } from './metadata.ts'
 import { EVENT_LOG_LABEL, emit } from './events.ts'
 import { UserInputEvent } from '../shared/events.ts'
-import { admit, deviceOf } from './request-security.ts'
+import { admit, deviceOf, loopbackAuthority, proxied } from './request-security.ts'
 import type { Access } from './request-security.ts'
 import { conversationIndex } from './project.ts'
 import { windowOps, windowView } from './view-window.ts'
@@ -107,10 +107,15 @@ async function runAction(
   extensions: Extensions,
   [, name, key]: RegExpExecArray,
   data: Record<string, unknown>,
+  publicPort: string,
 ) {
   if (request.headers['sec-fetch-site'] !== 'same-origin' && !request.headers.origin)
     throw new HttpError(403, 'Extension actions require a browser request')
   if (!extensions.action(name, key)) throw new HttpError(404, 'Unknown extension action')
+  if (extensions.localAction(name, key)) {
+    if (proxied(request.headers) || !loopbackAuthority(request.headers.host, publicPort))
+      throw new HttpError(403, 'This action is available only from this machine')
+  }
   const id = data.conversationId
   if (id !== undefined && (typeof id !== 'number' || !Number.isSafeInteger(id) || id < 1))
     throw new HttpError(400, 'Invalid conversation id')
@@ -416,7 +421,14 @@ export async function createApi(
             : undefined,
         )
         if (action) {
-          await runAction(request, response, extensions, action, data)
+          await runAction(
+            request,
+            response,
+            extensions,
+            action,
+            data,
+            new URL(system.current().process.url).port,
+          )
           return true
         }
         if (url.pathname === '/api/ui') {

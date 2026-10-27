@@ -1,8 +1,13 @@
-import { mkdir, realpath, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, realpath, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ExtensionHost } from '../server/extensions.ts'
-import { launchProject, stopProject } from '../extensions/project-switcher/server.ts'
+import {
+  actions,
+  launchProject,
+  localActions,
+  userActions,
+} from '../extensions/project-switcher/server.ts'
 import { temp } from './helpers.ts'
 
 const spawn = vi.hoisted(() =>
@@ -74,55 +79,33 @@ it('launches the canonical project with the Ultimate entrypoint and no inherited
   expect(unref).toHaveBeenCalledOnce()
 })
 
-it('signals only the revalidated live lock owner for a non-current project', async () => {
-  const userHome = await temp('ultimate-project-switcher-stop-')
-  const requested = join(userHome, 'other')
-  await mkdir(requested)
-  const root = await realpath(requested)
-  const home = join(userHome, 'other-home')
-  await mkdir(home)
-  const lock = join(home, 'ultimate.lock')
-  const current = join(userHome, 'current')
-  await mkdir(current)
-  const kill = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
-    if (signal === 0 && pid === 4321) return true
-    return true
-  })
-  const host: Pick<ExtensionHost, 'projectRoot' | 'projects'> = {
-    projectRoot: current,
-    projects: async () => [
-      {
-        root,
-        name: 'other',
-        home,
-        current: false,
-        conversations: [],
-      },
-    ],
+it('exposes launch but no backend termination action', () => {
+  expect(userActions).toEqual(['start'])
+  expect(localActions).toEqual(['start'])
+  expect(Object.keys(actions)).toEqual(['list', 'start'])
+})
+
+it('rejects missing, non-directory, and inaccessible project paths before spawning', async () => {
+  const parent = await temp('ultimate-project-switcher-invalid-')
+  const file = join(parent, 'file')
+  const denied = join(parent, 'denied')
+  await writeFile(file, '')
+  await mkdir(denied)
+  await chmod(denied, 0)
+  const host = {
+    projectRoot: '/current',
+    ultimateRoot: '/ultimate',
+    userHome: parent,
+  } as ExtensionHost
+
+  try {
+    await expect(launchProject(host, join(parent, 'missing'))).rejects.toThrow(
+      'Cannot open project',
+    )
+    await expect(launchProject(host, file)).rejects.toThrow('not a directory')
+    await expect(launchProject(host, denied)).rejects.toThrow('Cannot access project')
+    expect(spawn).not.toHaveBeenCalled()
+  } finally {
+    await chmod(denied, 0o700)
   }
-
-  await writeFile(lock, JSON.stringify({ pid: 4321, port: 4748, project: root }))
-  await expect(stopProject(host, { root, pid: 4321 })).resolves.toEqual({ root })
-  expect(kill.mock.calls).toEqual([
-    [4321, 0],
-    [4321, 'SIGTERM'],
-  ])
-
-  kill.mockClear()
-  await expect(stopProject({ ...host, projectRoot: root }, { root, pid: 4321 })).rejects.toThrow(
-    'current project',
-  )
-  await writeFile(lock, JSON.stringify({ pid: 9999, port: 4748, project: root }))
-  await expect(stopProject(host, { root, pid: 4321 })).rejects.toThrow('changed')
-  await writeFile(lock, JSON.stringify({ pid: 4321, port: 4748, project: '/different' }))
-  await expect(stopProject(host, { root, pid: 4321 })).rejects.toThrow('does not match')
-  expect(kill).not.toHaveBeenCalledWith(expect.any(Number), 'SIGTERM')
-
-  kill.mockImplementation((_pid, signal) => {
-    if (signal === 0) throw Object.assign(new Error('gone'), { code: 'ESRCH' })
-    return true
-  })
-  await writeFile(lock, JSON.stringify({ pid: 4321, port: 4748, project: root }))
-  await expect(stopProject(host, { root, pid: 4321 })).rejects.toThrow('no longer running')
-  expect(kill).not.toHaveBeenCalledWith(expect.any(Number), 'SIGTERM')
 })

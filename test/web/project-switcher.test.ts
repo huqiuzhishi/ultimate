@@ -8,7 +8,7 @@ vi.mock('@/sdk', () => ({
   cn: (...names: unknown[]) => names.filter(Boolean).join(' '),
 }))
 
-it('offers open and stop only for another running backend and start for a stopped project', () => {
+it('offers a separate-window launch for every non-current project', () => {
   const projects: Project[] = [
     {
       root: '/current',
@@ -29,14 +29,13 @@ it('offers open and stop only for another running backend and start for a stoppe
       projects,
       pending: undefined,
       onStart: vi.fn<(project: Project) => void>(),
-      onStop: vi.fn<(project: Project) => void>(),
     }),
   )
 
   expect(html).toContain('aria-label="Open running"')
-  expect(html).toContain('aria-label="Stop running"')
   expect(html).toContain('title="PID 200"')
   expect(html).toContain('aria-label="Start stopped"')
-  expect(html).not.toContain('aria-label="Stop current"')
+  expect(html).not.toContain('href=')
+  expect(html).not.toContain('aria-label="Stop')
   expect(html).not.toContain('aria-label="Start current"')
 })

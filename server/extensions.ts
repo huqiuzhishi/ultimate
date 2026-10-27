@@ -267,6 +267,7 @@ export async function loadExtensions(
   }
   const actions = new Map<string, Record<string, ExtensionAction>>()
   const userActions = new Map<string, string[]>()
+  const localActions = new Map<string, string[]>()
   /** Read-only actions a surface polls: the trace counts their successful calls instead of writing them. */
   const pollActions = new Map<string, string[]>()
   const settingsReloads = new Set<string>()
@@ -466,6 +467,7 @@ export async function loadExtensions(
     documents.delete(name)
     actions.delete(name)
     userActions.delete(name)
+    localActions.delete(name)
     pollActions.delete(name)
     settingsReloads.delete(name)
   }
@@ -561,6 +563,14 @@ export async function loadExtensions(
             )
           )
             throw new Error('userActions must contain registered action names')
+          const exportedLocalActions: unknown = module.localActions ?? []
+          if (
+            !Array.isArray(exportedLocalActions) ||
+            exportedLocalActions.some(
+              (action) => typeof action !== 'string' || !Object.hasOwn(exportedActions, action),
+            )
+          )
+            throw new Error('localActions must contain registered action names')
           const exportedPollActions: unknown = module.pollActions ?? []
           if (
             !Array.isArray(exportedPollActions) ||
@@ -579,6 +589,7 @@ export async function loadExtensions(
           if (open) await Promise.all([...facetOpeners.get(facetHost)!].map(runOpener))
           actions.set(name, exportedActions)
           userActions.set(name, exportedUserActions)
+          localActions.set(name, exportedLocalActions)
           pollActions.set(name, exportedPollActions)
           if (module.reloadOnSettings === true) settingsReloads.add(name)
           else settingsReloads.delete(name)
@@ -749,6 +760,9 @@ export async function loadExtensions(
     action(name: string, action: string) {
       const table = actions.get(name)
       return table && Object.hasOwn(table, action) ? table[action] : undefined
+    },
+    localAction(name: string, action: string) {
+      return localActions.get(name)?.includes(action) ?? false
     },
     invoke,
     doc: findDoc,

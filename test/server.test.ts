@@ -35,7 +35,8 @@ export default host => {
   remove = host.access.allow({ origin: '${origin}', verify: async ({ headers }) => headers['tailscale-user-login'] === 'owner' ? { login: 'owner' } : undefined })
   return defineExtension({ name: 'access' })
 }
-export const actions = { ping: async () => 'pong', revoke: async () => { remove(); return true } }`,
+export const localActions = ['local']
+export const actions = { ping: async () => 'pong', local: async () => 'local', revoke: async () => { remove(); return true } }`,
     })
     const wire = (
       path: string,
@@ -91,6 +92,16 @@ export const actions = { ping: async () => 'pong', revoke: async () => { remove(
         { origin: '', 'sec-fetch-site': 'same-origin' },
         'POST',
       ),
+    ).toBe(200)
+    expect(await wire('/api/extensions/access/actions/local', 'owner', {}, 'POST')).toBe(403)
+    expect(
+      (
+        await fetch(server.url + '/api/extensions/access/actions/local', {
+          method: 'POST',
+          headers: { origin: server.url },
+          body: '{}',
+        })
+      ).status,
     ).toBe(200)
     // An action call without `args` runs with empty args.
     expect(
