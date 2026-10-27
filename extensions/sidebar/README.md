@@ -61,7 +61,7 @@ section of the `sidebar.top` slot draws the same heading. Top to bottom:
   its target, opening `branch:<name>` in Review, and `+ N edits` (uncommitted changed paths), opening
   `uncommitted:<id>`. A fresh worktree, or a branch without one, shows nothing. All rows are read in one call, again
   only when an agent commits (`coding-tools.committed`), a worktree's state changes or a branch's run starts or ends;
-  never on a timer. A compact **Git tree** directly below the section shows the selected checkout and its latest twelve
+  never on a timer. A compact **Git tree** directly below the section shows the selected checkout and its latest twenty
   commits: a coordinator's worktree, @ultimate's main checkout, or the lander's detached integration checkout. It
   follows selection and refreshes on recorded commits and landings. Its subagents follow, one line each at any depth
   (`SubagentLine`, `rows.tsx`): their mark, plan

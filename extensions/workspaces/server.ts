@@ -110,7 +110,7 @@ export const actions = {
       '--graph',
       '--decorate',
       '--oneline',
-      '--max-count=12',
+      '--max-count=20',
       'HEAD',
     ).catch(
       // A selected checkout can disappear between the durable index read and this Git read.
