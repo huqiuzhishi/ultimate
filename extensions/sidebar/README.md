@@ -102,8 +102,9 @@ unlanded commits, and busy checkouts are kept.
 Info's Workspace section shows checkouts read-only.
 
 On hover or focus, a row's `…` menu offers Rename (inline; also on double-click; Enter or leaving the field saves,
-Escape cancels, and after either key focus returns to the row), Compact context (keeps the gist and frees context;
-disabled while the conversation works), and Conclude. Before concluding, the UI calls workspaces `pending {ids}`.
+Escape cancels, and after either key focus returns to the row), Update branch for coordinator worktrees, Compact context
+(keeps the gist and frees context; disabled while the conversation works), and Conclude. @ultimate and the lander also
+show Update branch beside Compact: it fetches origin and merges the target into the main or detached lander checkout. Before concluding, the UI calls workspaces `pending {ids}`.
 When a conversation or its subagents have uncommitted files or unlanded commits, a confirmation dialog names the
 work and explains that its checkout is kept until the work lands or is discarded. Otherwise it concludes at once.
 Concluded rows and their branches/subagents sit in a collapsed "Concluded · N" group at the bottom.

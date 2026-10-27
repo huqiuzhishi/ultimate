@@ -1800,6 +1800,59 @@ async function withRemote() {
   await git(paths.projectRoot, 'push', '-q', 'origin', 'main')
   return { paths, bare }
 }
+it.concurrent('updates main, coordinator and idle lander checkouts from origin', async () => {
+  const { paths, bare } = await withRemote()
+  const f = await fixture([], paths)
+  const coordinator = await f.create()
+  await f.service.ready(coordinator, context)
+  const workspace = (await f.service.get(coordinator, context))!
+  await commit(workspace.path, 'coordinator.txt')
+
+  const remote = join(paths.directory, 'remote-update')
+  await git(paths.directory, 'clone', '-q', bare, remote)
+  await git(remote, 'config', 'user.email', 'test@example.com')
+  await git(remote, 'config', 'user.name', 'Test')
+  await commit(remote, 'remote.txt')
+  await git(remote, 'push', '-q', 'origin', 'main')
+
+  const main = await actions['update-branch']({ id: 1, checkout: 'main' }, {
+    host: f.host,
+  } as ActionContext)
+  expect(main.changed).toBe(true)
+  expect(await readFile(join(f.projectRoot, 'remote.txt'), 'utf8')).toBe('remote.txt')
+
+  const branch = await actions['update-branch']({ id: coordinator, checkout: 'workspace' }, {
+    host: f.host,
+  } as ActionContext)
+  expect(branch.changed).toBe(true)
+  expect(await readFile(join(workspace.path, 'coordinator.txt'), 'utf8')).toBe('coordinator.txt')
+  expect(await readFile(join(workspace.path, 'remote.txt'), 'utf8')).toBe('remote.txt')
+
+  await writeFile(join(workspace.path, 'base.txt'), 'coordinator\n')
+  await git(workspace.path, 'commit', '-qam', 'coordinator base')
+  await writeFile(join(remote, 'base.txt'), 'remote\n')
+  await git(remote, 'commit', '-qam', 'remote base')
+  await git(remote, 'push', '-q', 'origin', 'main')
+  await expect(
+    actions['update-branch']({ id: coordinator, checkout: 'workspace' }, {
+      host: f.host,
+    } as ActionContext),
+  ).rejects.toThrow('origin/main conflicts with this checkout in:\nbase.txt')
+  expect(await readFile(join(workspace.path, 'base.txt'), 'utf8')).toBe('coordinator\n')
+  expect(
+    await git(workspace.path, 'rev-parse', '--quiet', '--verify', 'MERGE_HEAD').catch(() => ''),
+  ).toBe('')
+
+  const index = (await f.opened.harness.snapshot(Workspaces, ROOT_CONVERSATION_ID, context))!
+  const [landerSource, landerId] = Object.entries(index.landerConversations)[0]
+  const updatedLander = await actions['update-branch']({ id: landerId, checkout: 'lander' }, {
+    host: f.host,
+  } as ActionContext)
+  expect(updatedLander.changed).toBe(true)
+  expect(await readFile(join(await landerPath(f.home, landerSource), 'remote.txt'), 'utf8')).toBe(
+    'remote.txt',
+  )
+})
 /** Hold the lander's pushes from the project checkout with a pre-push hook until `release`. */
 async function holdPush(f: Awaited<ReturnType<typeof fixture>>) {
   const started = join(f.directory, 'push-started')

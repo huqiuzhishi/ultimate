@@ -1,7 +1,7 @@
 import { existsSync, watch } from 'node:fs'
 import type { FSWatcher } from 'node:fs'
 import type { JsonValue } from '@earendil-works/chord'
-import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context'
+import { BACKGROUND_CONTEXT as context, withAbortSignal } from '@earendil-works/chord/context'
 import { Type } from '@earendil-works/pi-ai'
 import {
   configure,
@@ -24,6 +24,7 @@ import { ConversationsApi, Release } from '../conversations/api.ts'
 import { agentRoots } from '../../lib/agents.ts'
 import { Handoff, WorkspacesApi } from './api.ts'
 import {
+  BranchUpdated,
   DiskAction,
   GithubAction,
   GitTreeAction,
@@ -32,6 +33,7 @@ import {
   PendingAction,
   ProgressAction,
   StatsAction,
+  UpdateBranchAction,
 } from './refs.ts'
 import { githubRepo } from '../../lib/project-identity.ts'
 import { landerPath, sweepChecks } from './lander.ts'
@@ -118,6 +120,30 @@ export const actions = {
     )
     if (output === undefined) return null
     return { branch, target, lines: output ? output.split('\n') : [] }
+  }),
+  'update-branch': implementAction(UpdateBranchAction, async (args, { host, signal }) => {
+    const id = workspaceId(args)
+    const checkout =
+      args && typeof args === 'object' && !Array.isArray(args) ? args.checkout : undefined
+    if (checkout !== 'workspace' && checkout !== 'main' && checkout !== 'lander')
+      throw new Error('Expected an update branch checkout')
+    const result = await workspaces(host).updateBranch(
+      id,
+      checkout,
+      withAbortSignal(signal, context),
+    )
+    await host.harness().commit(
+      (tx) =>
+        host.emit(tx, BranchUpdated, {
+          conversation: id,
+          checkout,
+          before: result.before,
+          after: result.after,
+          remote: result.remote,
+        }),
+      context,
+    )
+    return result
   }),
   pending: implementAction(PendingAction, (args, { host }) => {
     const ids = args && typeof args === 'object' && !Array.isArray(args) ? args.ids : undefined
