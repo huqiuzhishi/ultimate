@@ -26,6 +26,7 @@ import { Handoff, WorkspacesApi } from './api.ts'
 import {
   DiskAction,
   GithubAction,
+  GitTreeAction,
   InfoAction,
   IsolationAction,
   PendingAction,
@@ -33,7 +34,7 @@ import {
   StatsAction,
 } from './refs.ts'
 import { githubRepo } from '../../lib/project-identity.ts'
-import { sweepChecks } from './lander.ts'
+import { landerPath, sweepChecks } from './lander.ts'
 import { Workspaces, workspaces } from './workspaces.ts'
 export const order = -200
 export const docs = [Workspaces]
@@ -75,6 +76,48 @@ export const actions = {
     )
       throw new Error('Expected at most 100 conversation ids')
     return workspaces(host).progress(ids as number[], context)
+  }),
+  'git-tree': implementAction(GitTreeAction, async (args, { host }) => {
+    const id = workspaceId(args)
+    const checkout =
+      args && typeof args === 'object' && !Array.isArray(args) ? args.checkout : undefined
+    if (checkout !== 'workspace' && checkout !== 'main' && checkout !== 'lander')
+      throw new Error('Expected a Git tree checkout')
+    const index = await host.harness().snapshot(Workspaces, ROOT_CONVERSATION_ID, context)
+    const workspace = index?.items[String(id)]
+    let path: string
+    let branch: string
+    let target: string
+    if (checkout === 'workspace') {
+      if (!workspace || workspace.state !== 'ready') return null
+      ;({ path, branch, target } = workspace)
+    } else if (checkout === 'main') {
+      path = host.projectRoot
+      branch = await git(path, 'symbolic-ref', '--short', 'HEAD').catch(() => 'main checkout')
+      target = branch
+    } else {
+      const source = Object.entries(index?.landerConversations ?? {}).find(
+        ([, lander]) => lander === id,
+      )?.[0]
+      if (!source) return null
+      path = await landerPath(host.home, source)
+      target = await git(source, 'symbolic-ref', '--short', 'HEAD').catch(() => 'target')
+      branch = `lander → ${target}`
+    }
+    const output = await git(
+      path,
+      'log',
+      '--graph',
+      '--decorate',
+      '--oneline',
+      '--max-count=12',
+      'HEAD',
+    ).catch(
+      // A selected checkout can disappear between the durable index read and this Git read.
+      () => undefined,
+    )
+    if (output === undefined) return null
+    return { branch, target, lines: output ? output.split('\n') : [] }
   }),
   pending: implementAction(PendingAction, (args, { host }) => {
     const ids = args && typeof args === 'object' && !Array.isArray(args) ? args.ids : undefined

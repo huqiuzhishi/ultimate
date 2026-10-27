@@ -40,7 +40,7 @@ import {
   stateTone,
   stateWord,
 } from '../messages/ui.tsx'
-import { InFlight, inFlight, MemoryRow, stillOpen } from './root.tsx'
+import { GitTree, InFlight, inFlight, MemoryRow, stillOpen } from './root.tsx'
 import type { Flight } from './root.tsx'
 import { Landed, useLandings } from './landed.tsx'
 import { useRoots } from '../lineage/ui.tsx'
@@ -560,6 +560,7 @@ function Tree({
           onConclude={(id, conclude) => void requestConclude(id, conclude)}
           shownId={shownId}
         />
+        <GitTree flights={flights} shownId={shownId} ultimateId={ultimateId} />
       </nav>
       {summary &&
         (summary.summary ||

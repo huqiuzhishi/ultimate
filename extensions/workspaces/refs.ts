@@ -20,6 +20,11 @@ export const InfoAction = actionRef<{ id: number }, WorkspaceInfo | null>('works
  * changes, one entry per id that has a worktree, for the sidebar's in-flight rows.
  */
 export const ProgressAction = actionRef<{ ids: number[] }, KeptWork[]>('workspaces', 'progress')
+/** Selected conversation's coordinator, main or lander checkout branch and recent commit graph. */
+export const GitTreeAction = actionRef<
+  { id: number; checkout: 'workspace' | 'main' | 'lander' },
+  { branch: string; target: string; lines: string[] } | null
+>('workspaces', 'git-tree')
 /** `{ ids }` → the unlanded work of these conversations' worktrees, to warn before concluding them. */
 export const PendingAction = actionRef<{ ids: number[] }, KeptWork[]>('workspaces', 'pending')
 /** No arguments → how many worktrees there are in total and in each state, for the workspaces panel. */

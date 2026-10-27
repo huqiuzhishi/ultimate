@@ -1,4 +1,4 @@
-import { ScrollTextIcon } from 'lucide-react'
+import { GitBranchIcon, ScrollTextIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -15,7 +15,14 @@ import { MEMORY_PANEL, MemoryDoc, TallyDoc } from '../lineage/ui.tsx'
 import { Committed } from '../coding-tools/ui.tsx'
 import { MessagesDoc, conversationState, emptyMessages } from '../messages/ui.tsx'
 import { StandingDoc } from '../subagents/ui.tsx'
-import { CommitCount, ProgressAction, Review, useWorkspaceIndex } from '../workspaces/ui.tsx'
+import {
+  CommitCount,
+  GitTreeAction,
+  ProgressAction,
+  Review,
+  SubmissionLanded,
+  useWorkspaceIndex,
+} from '../workspaces/ui.tsx'
 import type { WorkspaceConversation as ConversationSummary } from '../workspaces/ui.tsx'
 import { AgentMark, ConversationPhase, FeatureTag, useOverview } from '../conversations/ui.tsx'
 import type { Landing } from './landings.ts'
@@ -341,6 +348,76 @@ export function InFlight({
         ))}
       </ul>
     </Section>
+  )
+}
+
+/** Recent commits from selected coordinator, @ultimate main checkout or lander checkout. */
+export function GitTree({
+  flights,
+  shownId,
+  ultimateId,
+}: {
+  flights: Flight[]
+  shownId?: number
+  ultimateId?: number
+}) {
+  const workspaces = useWorkspaceIndex()
+  const selected = flights.find((flight) => flight.conversation.id === shownId)?.conversation
+  const checkout =
+    selected?.workspace?.state === 'ready'
+      ? ('workspace' as const)
+      : shownId === ultimateId
+        ? ('main' as const)
+        : Object.values(workspaces.landerConversations).includes(shownId ?? 0)
+          ? ('lander' as const)
+          : undefined
+  const enabled = shownId !== undefined && checkout !== undefined
+  const tree = useAction(
+    GitTreeAction,
+    { id: shownId ?? 0, checkout: checkout ?? 'workspace' },
+    { enabled, onError: () => {} },
+  )
+  const change = useEvents({ events: [Committed, SubmissionLanded], limit: 1 })?.[0]?.id
+  const { refetch } = tree
+  const first = useRef(true)
+  useEffect(() => {
+    if (first.current) {
+      first.current = false
+      return
+    }
+    // oxlint-disable-next-line typescript/no-floating-promises -- useAction reports failures and resolves undefined rather than rejecting.
+    if (enabled) void refetch()
+  }, [change, enabled, refetch])
+  if (!enabled) return null
+  const fallback =
+    checkout === 'main'
+      ? 'main checkout'
+      : checkout === 'lander'
+        ? 'lander checkout'
+        : selected?.workspace?.branch
+  return (
+    <section aria-label="Git tree" className="mx-2 mt-1 border-t border-border/60 pt-1.5">
+      <h3 className="flex min-w-0 items-center gap-1.5 px-1 font-mono text-[9.5px] tracking-wider text-muted-foreground/70 uppercase">
+        <GitBranchIcon className="size-3 shrink-0" />
+        <span>Git tree</span>
+        <span className="min-w-0 truncate tracking-normal text-foreground/70 normal-case">
+          {tree.data?.branch ?? fallback}
+        </span>
+      </h3>
+      <ol className="mt-1 font-mono text-[10px] leading-4 text-muted-foreground/85">
+        {tree.loading && !tree.data ? (
+          <li className="px-1 text-muted-foreground/50">loading…</li>
+        ) : tree.data?.lines.length ? (
+          tree.data.lines.map((line, position) => (
+            <li className="truncate whitespace-pre px-1" key={`${position}:${line}`} title={line}>
+              {line}
+            </li>
+          ))
+        ) : (
+          <li className="px-1 text-muted-foreground/50">No commits</li>
+        )}
+      </ol>
+    </section>
   )
 }
 

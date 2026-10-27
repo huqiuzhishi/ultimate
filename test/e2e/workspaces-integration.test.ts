@@ -2397,6 +2397,27 @@ it.concurrent('pending and release preserve dirty and unlanded work, removing on
   expect(
     await actions.progress({ ids: [clean, dirty, ahead, 999] }, { host: f.host } as ActionContext),
   ).toEqual([{ id: clean, uncommitted: 0, unlanded: 0 }, ...expected])
+  const tree = await actions['git-tree']({ id: ahead, checkout: 'workspace' }, {
+    host: f.host,
+  } as ActionContext)
+  expect(tree).toMatchObject({ branch: aheadWorkspace.branch, target: 'main' })
+  expect(tree?.lines[0]).toContain('ahead.txt')
+  const main = await actions['git-tree']({ id: 1, checkout: 'main' }, {
+    host: f.host,
+  } as ActionContext)
+  expect(main).toMatchObject({ branch: 'main', target: 'main' })
+  const index = (await f.opened.harness.snapshot(Workspaces, ROOT_CONVERSATION_ID, context))!
+  const landerId = Object.values(index.landerConversations)[0]
+  expect(
+    await actions['git-tree']({ id: landerId, checkout: 'lander' }, {
+      host: f.host,
+    } as ActionContext),
+  ).toMatchObject({ branch: 'lander → main', target: 'main' })
+  expect(
+    await actions['git-tree']({ id: 999, checkout: 'workspace' }, {
+      host: f.host,
+    } as ActionContext),
+  ).toBeNull()
   expect(await f.service.release([clean, dirty, ahead], context)).toEqual(expected)
   await expect(access(cleanWorkspace.path)).rejects.toThrow('ENOENT')
   expect(await git(f.projectRoot, 'worktree', 'list', '--porcelain')).not.toContain(

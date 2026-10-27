@@ -9,6 +9,7 @@ export { CommitCount, Open, Review, useGithubRepo } from './landing.tsx'
 export { Workspaces, useWorkspacesMeta } from './panel.tsx'
 export {
   CheckRan,
+  GitTreeAction,
   InfoAction,
   IsolationAction,
   PendingAction,
