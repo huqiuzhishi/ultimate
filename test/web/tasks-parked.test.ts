@@ -22,6 +22,7 @@ vi.mock('@/sdk', () => ({
   formatDuration: (ms: number) => `${ms}ms`,
   provide: () => ({}),
   RunStart: {},
+  useDocOf: () => undefined,
 }))
 vi.mock('@/sdk/client', () => ({ store: { notify } }))
 vi.mock('@/components/ai/tool', () => ({
@@ -30,7 +31,8 @@ vi.mock('@/components/ai/tool', () => ({
 vi.mock('../../extensions/workspaces/ui.tsx', () => ({}))
 vi.mock('../../extensions/conversations/ui.tsx', () => ({}))
 vi.mock('../../extensions/plan/ui.tsx', () => ({}))
-const { RetryButton, TaskRow } = await import('../../extensions/tasks/web.tsx')
+vi.mock('../../extensions/subagents/ui.tsx', () => ({ StandingDoc: {} }))
+const { conversationName, RetryButton, TaskRow } = await import('../../extensions/tasks/web.tsx')
 const { RetryAction } = await import('../../extensions/tasks/refs.ts')
 
 const task = (blocked?: TaskGraphNode['blocked']): TaskGraphNode => ({
@@ -47,6 +49,7 @@ const tree = {
   children: new Map(),
   roots: new Map(),
   summaries: new Map(),
+  standing: new Map(),
   tools: new Map(),
   started: {},
   features: new Map(),
@@ -54,6 +57,11 @@ const tree = {
 }
 const row = (node: TaskGraphNode) =>
   renderToStaticMarkup(createElement(TaskRow, { task: node, tree, depth: 0 }) as ReactNode)
+
+it('names a standing conversation by its agent identity when its summary is unavailable', () => {
+  expect(conversationName(undefined, 'ultimate')).toBe('@ultimate')
+  expect(conversationName(undefined, undefined)).toBe('Untitled conversation')
+})
 
 it('shows a parked task with its reason and a Retry button', () => {
   const html = row(task('restart_limit'))

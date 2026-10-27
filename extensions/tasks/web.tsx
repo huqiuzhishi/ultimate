@@ -12,6 +12,7 @@ import {
   RunStart,
   useAction,
   useConversation,
+  useDocOf,
   useNow,
   useTasks,
   useUltimate,
@@ -23,6 +24,7 @@ import type { WorkspaceConversation as ConversationSummary } from '../workspaces
 import { useWorkspaceConversations as useConversations } from '../workspaces/ui.tsx'
 import { FeatureTag, hiddenConversationIds, useOverview } from '../conversations/ui.tsx'
 import { TaskChip, useTaskOf } from '../plan/ui.tsx'
+import { StandingDoc } from '../subagents/ui.tsx'
 import { RetryAction, StartedAction } from './refs.ts'
 
 interface Tree {
@@ -31,6 +33,8 @@ interface Tree {
   /** Conversation-owned tasks by conversation id. */
   roots: Map<number, TaskGraphNode[]>
   summaries: Map<number, ConversationSummary>
+  /** Fixed names of standing-agent conversations, by conversation id. */
+  standing: Map<number, string>
   /** Tool names of the shown conversation's tool tasks. */
   tools: Map<number, string>
   /** When each task first ran, in wall-clock milliseconds. */
@@ -278,9 +282,18 @@ export function RetryButton({ id }: { id: number }) {
   )
 }
 
+/** Stable task-graph name: standing identity, conversation title/label, then placeholder. */
+export function conversationName(
+  summary: ConversationSummary | undefined,
+  standing: string | undefined,
+) {
+  return standing ? `@${standing}` : summary?.title || summary?.label || 'Untitled conversation'
+}
+
 function ConversationRow({ id, tree, ...place }: { id: number; tree: Tree } & Place) {
   const { conversationId, switchConversation } = useUltimate()
   const summary = tree.summaries.get(id)
+  const name = conversationName(summary, tree.standing.get(id))
   const link = useTaskOf(id)
   const shown = conversationId === id
   const tasks = tree.roots.get(id) ?? []
@@ -304,11 +317,8 @@ function ConversationRow({ id, tree, ...place }: { id: number; tree: Tree } & Pl
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-1.5">
             {link && <TaskChip task={link} />}
-            <span
-              className="truncate font-sans text-[12px] text-foreground/90"
-              title={summary?.title}
-            >
-              {summary?.title || summary?.label || 'Untitled conversation'}
+            <span className="truncate font-sans text-[12px] text-foreground/90" title={name}>
+              {name}
             </span>
           </span>
           <span className="flex min-w-0 items-center gap-1.5 text-[10.5px] text-muted-foreground/60">
@@ -333,6 +343,7 @@ function ConversationRow({ id, tree, ...place }: { id: number; tree: Tree } & Pl
 function TasksPanel() {
   const graph = useTasks()
   const conversations = useConversations()
+  const standing = useDocOf(1, StandingDoc)
   const { live } = useConversation()
   const [concluded] = useUiState<number[]>('ext.conversations.concluded', [])
   const { tasks, top, ...rest } = build(graph, conversations, concluded)
@@ -349,6 +360,7 @@ function TasksPanel() {
     ...rest,
     started,
     now,
+    standing: new Map(Object.entries(standing ?? {}).map(([name, id]) => [id, name])),
     features: new Map(
       Object.entries(overview).flatMap(([id, row]) =>
         row.feature ? [[Number(id), row.feature]] : [],
