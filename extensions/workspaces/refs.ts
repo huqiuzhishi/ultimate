@@ -21,10 +21,25 @@ export const InfoAction = actionRef<{ id: number }, WorkspaceInfo | null>('works
  */
 export const ProgressAction = actionRef<{ ids: number[] }, KeptWork[]>('workspaces', 'progress')
 /** Selected conversation's coordinator, main or lander checkout branch and recent commit graph. */
+export type CheckoutKind = 'workspace' | 'main' | 'lander'
+/** Selected conversation and checkout kind → its branch, target and recent commit graph, or null when unavailable. */
 export const GitTreeAction = actionRef<
-  { id: number; checkout: 'workspace' | 'main' | 'lander' },
+  { id: number; checkout: CheckoutKind },
   { branch: string; target: string; lines: string[] } | null
 >('workspaces', 'git-tree')
+/** Fetch origin and merge its target into selected coordinator, main or lander checkout. */
+export const UpdateBranchAction = actionRef<
+  { id: number; checkout: CheckoutKind },
+  { before: string; after: string; remote: string; changed: boolean }
+>('workspaces', 'update-branch')
+/** A user updated one checkout from its remote target; refresh Git projections. */
+export const BranchUpdated = defineEvent<{
+  conversation: number
+  checkout: CheckoutKind
+  before: string
+  after: string
+  remote: string
+}>('workspaces.branch-updated')
 /** `{ ids }` → the unlanded work of these conversations' worktrees, to warn before concluding them. */
 export const PendingAction = actionRef<{ ids: number[] }, KeptWork[]>('workspaces', 'pending')
 /** No arguments → how many worktrees there are in total and in each state, for the workspaces panel. */

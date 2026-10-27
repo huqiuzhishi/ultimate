@@ -8,6 +8,7 @@ export type { WorkspaceConversation } from './data.tsx'
 export { CommitCount, Open, Review, useGithubRepo } from './landing.tsx'
 export { Workspaces, useWorkspacesMeta } from './panel.tsx'
 export {
+  BranchUpdated,
   CheckRan,
   GitTreeAction,
   InfoAction,
@@ -15,6 +16,7 @@ export {
   PendingAction,
   ProgressAction,
   SubmissionLanded,
+  UpdateBranchAction,
   WorkspacesDoc,
 } from './refs.ts'
-export type { LandedData } from './refs.ts'
+export type { CheckoutKind, LandedData } from './refs.ts'

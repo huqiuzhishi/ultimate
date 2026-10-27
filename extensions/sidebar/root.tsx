@@ -16,6 +16,7 @@ import { Committed } from '../coding-tools/ui.tsx'
 import { MessagesDoc, conversationState, emptyMessages } from '../messages/ui.tsx'
 import { StandingDoc } from '../subagents/ui.tsx'
 import {
+  BranchUpdated,
   CommitCount,
   GitTreeAction,
   ProgressAction,
@@ -237,6 +238,7 @@ function PhasedFlightRow({
                 cancelled.current = false
                 setEditing(true)
               }}
+              updateBranch
             />
           </div>
         )}
@@ -377,7 +379,8 @@ export function GitTree({
     { id: shownId ?? 0, checkout: checkout ?? 'workspace' },
     { enabled, onError: () => {} },
   )
-  const change = useEvents({ events: [Committed, SubmissionLanded], limit: 1 })?.[0]?.id
+  const change = useEvents({ events: [BranchUpdated, Committed, SubmissionLanded], limit: 1 })?.[0]
+    ?.id
   const { refetch } = tree
   const first = useRef(true)
   useEffect(() => {

@@ -12,10 +12,12 @@ import {
 } from '@earendil-works/pi-durable'
 import type { ConversationId, Cursor, TaskId, Tx } from '@earendil-works/pi-durable'
 import { exec } from '../../lib/exec.ts'
+import { fetchOrigin } from '../../lib/fast-forward.ts'
 import { git, isolatable } from '../../lib/git.ts'
 import type { ExtensionHost } from '../../server/extensions.ts'
 import { ConversationsApi } from '../conversations/api.ts'
 import { WorkspacesDoc } from './refs.ts'
+import type { CheckoutKind } from './refs.ts'
 import { setup } from './setup.ts'
 import { createLander, landerAgent, landerCheckout, landerPath, log } from './lander.ts'
 import type {
@@ -280,6 +282,93 @@ export function workspaces(host: Host) {
       return stopped.length
     }, context)
     if (restarted) host.harness().resume()
+  }
+  /** Fetch origin and merge the selected checkout's target, aborting a conflicted merge without losing local work. */
+  async function updateBranch(id: ConversationId, checkout: CheckoutKind, context: Context) {
+    if ((await host.harness().snapshot(LiveDoc, id, context))?.run)
+      throw new Error('Conversation is running; stop it before updating its branch')
+    const index = await host.harness().snapshot(Workspaces, ROOT_CONVERSATION_ID, context)
+    let path: string
+    let source: string
+    let target: string
+    let branch: string | undefined
+    if (checkout === 'workspace') {
+      const workspace = index?.items[String(id)]
+      if (!workspace || workspace.state !== 'ready')
+        throw new Error('Conversation has no ready workspace')
+      ;({ path, source, target, branch } = workspace)
+    } else if (checkout === 'main') {
+      const main = await isolatable(host.projectRoot)
+      if ('reason' in main) throw new Error(main.reason)
+      path = host.projectRoot
+      ;({ source, target } = main)
+      branch = target
+    } else {
+      if (!index) throw new Error('Unknown lander checkout')
+      const found = Object.entries(index.landerConversations).find(([, lander]) => lander === id)
+      if (!found) throw new Error('Unknown lander checkout')
+      source = found[0]
+      if (index.queue.some((item) => item.source === source))
+        throw new Error('Lander has queued submissions; wait for its queue to clear')
+      const running = index.landers[source]
+      const task =
+        running === undefined ? undefined : await host.harness().getTask(running as TaskId, context)
+      if (task && task.state.status !== 'terminal' && task.state.status !== 'completing')
+        throw new Error('Lander is running; wait for it to finish')
+      path = await landerPath(host.home, source)
+      target = await git(source, 'symbolic-ref', '--short', 'HEAD')
+    }
+    return serial(source, async () => {
+      const run = (...args: string[]) =>
+        git({ cwd: path, timeout: 300000, signal: context.abortSignal }, ...args)
+      const cleanup = (...args: string[]) => git({ cwd: path, timeout: 30000 }, ...args)
+      if (await run('status', '--porcelain'))
+        throw new Error('Checkout has uncommitted changes; commit or discard them first')
+      if (branch) {
+        const current = await run('symbolic-ref', '--quiet', '--short', 'HEAD').catch(() => '')
+        if (current !== branch)
+          throw new Error(`Checkout is on ${current || 'a detached HEAD'}, not ${branch}`)
+      }
+      const before = await run('rev-parse', 'HEAD')
+      await fetchOrigin(run)
+      const remote = `origin/${target}`
+      await run('rev-parse', '--verify', remote)
+      try {
+        await run(
+          'merge',
+          '--no-edit',
+          '-m',
+          `Merge ${remote} into ${branch ?? 'lander checkout'}`,
+          remote,
+        )
+      } catch (error) {
+        const conflicts = await cleanup('diff', '--name-only', '--diff-filter=U').catch(() => '')
+        const merging = await cleanup('rev-parse', '--quiet', '--verify', 'MERGE_HEAD').then(
+          () => true,
+          () => false,
+        )
+        if (merging)
+          try {
+            // Cancellation must not cancel cleanup and leave this checkout in a conflicted merge.
+            await cleanup('merge', '--abort')
+          } catch (abortError) {
+            throw new Error(
+              `${error instanceof Error ? error.message : String(error)}\nMerge cleanup failed: ${abortError instanceof Error ? abortError.message : String(abortError)}`,
+              { cause: abortError },
+            )
+          }
+        throw new Error(
+          conflicts
+            ? `${remote} conflicts with this checkout in:\n${conflicts}`
+            : error instanceof Error
+              ? error.message
+              : String(error),
+          { cause: error },
+        )
+      }
+      const after = await run('rev-parse', 'HEAD')
+      return { before, after, remote, changed: before !== after }
+    })
   }
   /**
    * Why a tool call in conversation `id` must not run: it is a lander conversation whose task owns the checkout for a
@@ -901,6 +990,7 @@ export function workspaces(host: Host) {
     Lander,
     resume,
     standLander,
+    updateBranch,
     landerOwnsCheckout,
     started,
     get,

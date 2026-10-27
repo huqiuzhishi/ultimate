@@ -8,6 +8,7 @@ import {
   FoldVerticalIcon,
   PauseIcon,
   PencilIcon,
+  RefreshCwIcon,
 } from 'lucide-react'
 import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -30,7 +31,8 @@ import {
   RenameAction,
 } from '../conversations/ui.tsx'
 import type { Presence } from '../conversations/ui.tsx'
-import { Review } from '../workspaces/ui.tsx'
+import { Review, UpdateBranchAction } from '../workspaces/ui.tsx'
+import type { CheckoutKind } from '../workspaces/ui.tsx'
 import type { WorkspaceConversation as ConversationSummary } from '../workspaces/ui.tsx'
 import type { OverviewRow } from '../conversations/types.ts'
 import type { ConversationState } from '../messages/ui.tsx'
@@ -262,6 +264,7 @@ function PhasedRow({
           conversation={conversation}
           onConclude={onConclude}
           onRename={rename}
+          updateBranch={conversation.branchOf !== undefined}
         />
       )}
     </div>
@@ -277,11 +280,13 @@ export function RowMenu({
   concluded,
   onRename,
   onConclude,
+  updateBranch = false,
 }: {
   conversation: ConversationSummary
   concluded: boolean
   onRename: () => void
   onConclude: (conclude: boolean) => void
+  updateBranch?: boolean
 }) {
   const actions = useUltimate()
   /** What a menu item does once the menu has closed, so focus lands where it should. */
@@ -338,6 +343,9 @@ export function RowMenu({
           <PencilIcon />
           Rename
         </DropdownMenuItem>
+        {updateBranch && conversation.workspace?.state === 'ready' && (
+          <UpdateBranchItem checkout="workspace" conversation={conversation} />
+        )}
         <CompactItem conversation={conversation} />
         <DropdownMenuItem className="text-[12.5px]" onSelect={() => onConclude(!concluded)}>
           <CircleCheckIcon />
@@ -421,11 +429,56 @@ export function StandingRow({
             <EllipsisIcon className="size-3.5" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-44 [&_[role=menuitem]]:cursor-pointer">
+            {(name === 'ultimate' || name === 'lander') && (
+              <UpdateBranchItem
+                checkout={name === 'ultimate' ? 'main' : 'lander'}
+                conversation={conversation}
+                disabled={presence === 'working'}
+              />
+            )}
             <CompactItem conversation={conversation} />
           </DropdownMenuContent>
         </DropdownMenu>
       )}
     </div>
+  )
+}
+
+/** Fetch and merge the target branch into one idle selected checkout. */
+function UpdateBranchItem({
+  conversation,
+  checkout,
+  disabled = false,
+}: {
+  conversation: ConversationSummary
+  checkout: CheckoutKind
+  disabled?: boolean
+}) {
+  const [updating, setUpdating] = useState(false)
+  const update = () => {
+    setUpdating(true)
+    void api
+      .action(UpdateBranchAction, { id: conversation.id, checkout })
+      .then((result) =>
+        store.notify({
+          level: 'info',
+          message: result.changed
+            ? `Updated from ${result.remote}`
+            : `Already up to date with ${result.remote}`,
+        }),
+      )
+      .catch((error: unknown) => store.notify({ level: 'error', message: errorMessage(error) }))
+      .finally(() => setUpdating(false))
+  }
+  return (
+    <DropdownMenuItem
+      className="text-[12.5px]"
+      disabled={disabled || conversation.busy || updating}
+      onSelect={update}
+    >
+      <RefreshCwIcon className={cn(updating && 'animate-spin')} />
+      {updating ? 'Updating branch…' : 'Update branch'}
+    </DropdownMenuItem>
   )
 }
 
