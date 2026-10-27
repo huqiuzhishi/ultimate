@@ -8,4 +8,6 @@ Ultimate passes each durable conversation's provider identity to the proxy. Retr
 
 This adapter does not load arbitrary Pi extensions. Pi and Ultimate use different extension lifecycle APIs. Cursor's Pi-only `/max-mode`, footer status, and automatic response to Cursor server-side summaries are not exposed in Ultimate.
 
+`patches/pi-cursor-provider@0.1.11.patch` fixes three proxy faults seen through Cursor's agent API. The system prompt goes in `RequestContext.cloudRule`, since Cursor ignores the root prompt blob the proxy sent. Cursor models call their native read, write and shell tools even when MCP tools are offered: the proxy now redirects those calls to Ultimate's `read`, `write` and `bash` and answers with the typed native result. Before, it rejected them, and the model ended its turn as if it had done the work. An exec type the proto does not know now fails the turn with an error naming it; before, Cursor waited forever for an answer while heartbeats held the stream open. `test/cursor-native-tools.test.ts` covers the patch.
+
 The dependency is pinned to `pi-cursor-provider@0.1.11`. Its obsolete `@mariozechner/*` type-only peers are marked optional because Ultimate uses `@earendil-works/*`. Verification: `pnpm check` and focused Cursor tests.

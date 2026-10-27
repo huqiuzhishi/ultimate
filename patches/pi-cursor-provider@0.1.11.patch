@@ -1,0 +1,352 @@
+diff --git a/proxy.ts b/proxy.ts
+index 7257f109c5313a19be9aeebcf7bd5ab846fe2fc9..8023fe6ba86d2b796739e69b935af1f1c16c1b18 100644
+--- a/proxy.ts
++++ b/proxy.ts
+@@ -50,6 +50,7 @@ import {
+   ModelDetailsSchema,
+   ReadRejectedSchema,
+   ReadResultSchema,
++  ReadSuccessSchema,
+   RequestContextResultSchema,
+   RequestContextSchema,
+   RequestContextSuccessSchema,
+@@ -58,11 +59,18 @@ import {
+   ShellRejectedSchema,
+   ShellResultSchema,
+   ShellStreamSchema,
++  ShellStreamStartSchema,
++  ShellStreamStdoutSchema,
++  ShellStreamExitSchema,
++  ShellSuccessSchema,
++  ExecClientControlMessageSchema,
++  ExecClientStreamCloseSchema,
+   ToolCallSchema,
+   UserMessageActionSchema,
+   UserMessageSchema,
+   WriteRejectedSchema,
+   WriteResultSchema,
++  WriteSuccessSchema,
+   WriteShellStdinErrorSchema,
+   WriteShellStdinResultSchema,
+   GetUsableModelsRequestSchema,
+@@ -125,6 +133,8 @@ interface CursorRequestPayload {
+   requestBytes: Uint8Array;
+   blobStore: Map<string, Uint8Array>;
+   mcpTools: McpToolDefinition[];
++  /** System prompt for RequestContext.cloudRule: Cursor's agent ignores rootPromptMessagesJson. */
++  cloudRule?: string;
+ }
+ 
+ interface PendingExec {
+@@ -133,6 +143,8 @@ interface PendingExec {
+   toolCallId: string;
+   toolName: string;
+   decodedArgs: string;
++  /** Set when a native Cursor exec was redirected to a client tool: the typed result it must be answered with. */
++  native?: { resultCase: "readResult" | "writeResult" | "shellResult" | "shellStream"; args: Record<string, string> };
+ }
+ 
+ interface BridgeHandle {
+@@ -151,6 +163,7 @@ interface ActiveBridge {
+   heartbeatTimer: ReturnType<typeof setInterval>;
+   blobStore: Map<string, Uint8Array>;
+   mcpTools: McpToolDefinition[];
++  cloudRule?: string;
+   pendingExecs: PendingExec[];
+   currentTurn: ParsedTurn;
+ }
+@@ -1117,7 +1130,9 @@ export function buildCursorRequest(
+     message: { case: "runRequest", value: runRequest },
+   });
+ 
+-  const payload = { requestBytes: toBinary(AgentClientMessageSchema, clientMessage), blobStore, mcpTools: [] };
++  const payload = {
++    requestBytes: toBinary(AgentClientMessageSchema, clientMessage), blobStore, mcpTools: [], cloudRule: systemPrompt,
++  };
+   debugLog("cursor_request.build.end", payload);
+   return payload;
+ }
+@@ -1128,10 +1143,12 @@ function processServerMessage(
+   msg: AgentServerMessage,
+   blobStore: Map<string, Uint8Array>,
+   mcpTools: McpToolDefinition[],
++  cloudRule: string | undefined,
+   sendFrame: (data: Uint8Array) => void,
+   state: StreamState,
+   onText: (text: string, isThinking?: boolean) => void,
+   onMcpExec: (exec: PendingExec) => void,
++  onUnsupported: (detail: string) => void,
+   onCheckpoint?: (checkpointBytes: Uint8Array) => void,
+ ): void {
+   const msgCase = msg.message.case;
+@@ -1152,7 +1169,7 @@ function processServerMessage(
+   } else if (msgCase === "kvServerMessage") {
+     handleKvMessage(msg.message.value as KvServerMessage, blobStore, sendFrame);
+   } else if (msgCase === "execServerMessage") {
+-    handleExecMessage(msg.message.value as ExecServerMessage, mcpTools, sendFrame, onMcpExec);
++    handleExecMessage(msg.message.value as ExecServerMessage, mcpTools, cloudRule, sendFrame, onMcpExec, onUnsupported);
+   } else if (msgCase === "conversationCheckpointUpdate") {
+     const stateStructure = msg.message.value as ConversationStateStructure;
+     if ((stateStructure as any).tokenDetails) {
+@@ -1201,15 +1218,17 @@ function handleKvMessage(
+ function handleExecMessage(
+   execMsg: ExecServerMessage,
+   mcpTools: McpToolDefinition[],
++  cloudRule: string | undefined,
+   sendFrame: (data: Uint8Array) => void,
+   onMcpExec: (exec: PendingExec) => void,
++  onUnsupported: (detail: string) => void,
+ ): void {
+   const execCase = (execMsg as any).message.case;
+   const REJECT_REASON = "Tool not available in this environment. Use the MCP tools provided instead.";
+ 
+   if (execCase === "requestContextArgs") {
+     const requestContext = create(RequestContextSchema, {
+-      rules: [], repositoryInfo: [], tools: mcpTools, gitRepos: [],
++      rules: [], cloudRule, repositoryInfo: [], tools: mcpTools, gitRepos: [],
+       projectLayouts: [], mcpInstructions: [], fileContents: {}, customSubagents: [],
+     });
+     const result = create(RequestContextResultSchema, {
+@@ -1232,6 +1251,14 @@ function handleExecMessage(
+     return;
+   }
+ 
++  // Cursor models call their native tools even when MCP tools are offered; rejecting them makes the model give up
++  // ("done") without doing the work. Redirect the native call to the client's equivalent tool when it has one.
++  const native = redirectNativeExec(execMsg, mcpTools);
++  if (native) {
++    onMcpExec(native);
++    return;
++  }
++
+   // Reject native Cursor tools so model falls back to MCP tools
+   if (execCase === "readArgs") {
+     const args = (execMsg as any).message.value;
+@@ -1328,12 +1355,92 @@ function handleExecMessage(
+     return;
+   }
+ 
+-  // Catch-all: log and attempt a generic rejection so the bridge doesn't hang
+-  console.error(`[cursor-provider] UNHANDLED exec case: "${execCase}". Bridge may stall.`);
+-  // Try to derive the result case name from the args case name
+-  const guessedResult = (execCase as string)?.replace(/Args$/, "Result");
+-  if (guessedResult && guessedResult !== execCase) {
+-    sendExecResult(execMsg, guessedResult, create(McpResultSchema, {}), sendFrame);
++  // An exec this proto does not know (a newer native tool) has no result we can encode, and Cursor waits for one
++  // forever while heartbeats keep the stream alive: stop the turn with an error instead.
++  const unknown = ((execMsg as any).$unknown ?? []).map((field: { no: number }) => field.no).join(",");
++  onUnsupported(
++    `Cursor requested native tool exec ${execCase ?? `(unknown field ${unknown || "?"})`}, which this proxy cannot answer.`,
++  );
++}
++
++function redirectNativeExec(execMsg: ExecServerMessage, mcpTools: McpToolDefinition[]): PendingExec | undefined {
++  const execCase = (execMsg as any).message.case;
++  const args = (execMsg as any).message.value;
++  const has = (name: string) => mcpTools.some((tool) => tool.name === name);
++  const exec = (toolName: string, toolArgs: Record<string, unknown>, native: PendingExec["native"]): PendingExec => ({
++    execId: (execMsg as any).execId,
++    execMsgId: (execMsg as any).id,
++    toolCallId: args.toolCallId || crypto.randomUUID(),
++    toolName,
++    decodedArgs: JSON.stringify(toolArgs),
++    native,
++  });
++  if (execCase === "readArgs" && has("read"))
++    return exec("read", { path: args.path ?? "" }, { resultCase: "readResult", args: { path: args.path ?? "" } });
++  if (execCase === "writeArgs" && has("write")) {
++    const content = args.fileBytes?.length ? new TextDecoder().decode(args.fileBytes) : (args.fileText ?? "");
++    return exec("write", { path: args.path ?? "", content }, {
++      resultCase: "writeResult",
++      args: {
++        path: args.path ?? "",
++        fileSize: String(new TextEncoder().encode(content).byteLength),
++        linesCreated: String(content.split("\n").length),
++      },
++    });
++  }
++  if ((execCase === "shellArgs" || execCase === "shellStreamArgs") && has("bash")) {
++    const command = args.workingDirectory
++      ? `cd ${JSON.stringify(args.workingDirectory)} && ${args.command ?? ""}`
++      : (args.command ?? "");
++    return exec("bash", { command }, {
++      resultCase: execCase === "shellArgs" ? "shellResult" : "shellStream",
++      args: { command: args.command ?? "", workingDirectory: args.workingDirectory ?? "" },
++    });
++  }
++  return undefined;
++}
++
++/** Answer a redirected native exec with the typed result Cursor expects; the client tool's text is its output. */
++function sendNativeExecResult(exec: PendingExec, text: string, sendFrame: (data: Uint8Array) => void): void {
++  const { resultCase, args } = exec.native!;
++  const send = (messageCase: string, value: unknown) => {
++    const execClientMessage = create(ExecClientMessageSchema, {
++      id: exec.execMsgId, execId: exec.execId, message: { case: messageCase as any, value: value as any },
++    });
++    sendFrame(frameConnectMessage(toBinary(AgentClientMessageSchema, create(AgentClientMessageSchema, {
++      message: { case: "execClientMessage", value: execClientMessage },
++    }))));
++  };
++  if (resultCase === "readResult") {
++    send(resultCase, create(ReadResultSchema, {
++      result: { case: "success", value: create(ReadSuccessSchema, {
++        path: args.path, totalLines: text.split("\n").length,
++        fileSize: BigInt(new TextEncoder().encode(text).byteLength), truncated: false,
++        output: { case: "content", value: text },
++      }) },
++    }));
++  } else if (resultCase === "writeResult") {
++    send(resultCase, create(WriteResultSchema, {
++      result: { case: "success", value: create(WriteSuccessSchema, {
++        path: args.path, fileSize: Number(args.fileSize), linesCreated: Number(args.linesCreated),
++      }) },
++    }));
++  } else if (resultCase === "shellResult") {
++    send(resultCase, create(ShellResultSchema, {
++      result: { case: "success", value: create(ShellSuccessSchema, {
++        command: args.command, workingDirectory: args.workingDirectory, exitCode: 0, signal: "", stdout: text, stderr: "",
++      }) },
++    }));
++  } else {
++    const event = (value: { case: string; value: unknown }) => send(resultCase, create(ShellStreamSchema, { event: value as any }));
++    event({ case: "start", value: create(ShellStreamStartSchema, {}) });
++    if (text) event({ case: "stdout", value: create(ShellStreamStdoutSchema, { data: text }) });
++    event({ case: "exit", value: create(ShellStreamExitSchema, { code: 0 }) });
++    sendFrame(frameConnectMessage(toBinary(AgentClientMessageSchema, create(AgentClientMessageSchema, {
++      message: { case: "execClientControlMessage", value: create(ExecClientControlMessageSchema, {
++        message: { case: "streamClose", value: create(ExecClientStreamCloseSchema, { id: exec.execMsgId }) },
++      }) },
++    }))));
+   }
+ }
+ 
+@@ -1580,6 +1687,7 @@ function handleStreamingResponse(
+     heartbeatTimer,
+     payload.blobStore,
+     payload.mcpTools,
++    payload.cloudRule,
+     modelId,
+     bridgeKey,
+     convKey,
+@@ -1623,6 +1731,7 @@ function writeSSEStream(
+   heartbeatTimer: ReturnType<typeof setInterval>,
+   blobStore: Map<string, Uint8Array>,
+   mcpTools: McpToolDefinition[],
++  cloudRule: string | undefined,
+   modelId: string,
+   bridgeKey: string,
+   convKey: string,
+@@ -1693,7 +1802,7 @@ function writeSSEStream(
+       try {
+         const serverMessage = fromBinary(AgentServerMessageSchema, messageBytes);
+         processServerMessage(
+-          serverMessage, blobStore, mcpTools,
++          serverMessage, blobStore, mcpTools, cloudRule,
+           (data) => bridge.write(data),
+           state,
+           (text, isThinking) => {
+@@ -1735,7 +1844,7 @@ function writeSSEStream(
+             }));
+ 
+             activeBridges.set(bridgeKey, {
+-              bridge, heartbeatTimer, blobStore, mcpTools, pendingExecs: state.pendingExecs, currentTurn,
++              bridge, heartbeatTimer, blobStore, mcpTools, cloudRule, pendingExecs: state.pendingExecs, currentTurn,
+             });
+             debugLog("stream.tool_call_pause", { requestId, bridgeKey, exec, pendingExecs: state.pendingExecs, currentTurn });
+ 
+@@ -1743,6 +1852,18 @@ function writeSSEStream(
+             sendDone();
+             closeResponse();
+           },
++          (detail) => {
++            console.error(`[cursor-provider] ${detail}`);
++            debugLog("stream.unsupported_exec", { requestId, bridgeKey, convKey, detail });
++            // The checkpoint now holds the unanswered call; the next request rebuilds from the client's messages.
++            conversationStates.delete(convKey);
++            cancelled = true;
++            cleanupBridge(bridge, heartbeatTimer, bridgeKey);
++            sendSSE(makeChunk({ content: detail }, "error"));
++            sendSSE(makeUsageChunk());
++            sendDone();
++            closeResponse();
++          },
+           (checkpointBytes) => {
+             latestCheckpoint = checkpointBytes;
+             const stored = conversationStates.get(convKey);
+@@ -1815,6 +1936,7 @@ export function writeSSEStreamForTests(args: {
+   heartbeatTimer: ReturnType<typeof setInterval>;
+   blobStore?: Map<string, Uint8Array>;
+   mcpTools?: McpToolDefinition[];
++  cloudRule?: string;
+   modelId: string;
+   bridgeKey: string;
+   convKey: string;
+@@ -1829,6 +1951,7 @@ export function writeSSEStreamForTests(args: {
+     args.heartbeatTimer,
+     args.blobStore ?? new Map(),
+     args.mcpTools ?? [],
++    args.cloudRule,
+     args.modelId,
+     args.bridgeKey,
+     args.convKey,
+@@ -1854,7 +1977,7 @@ function handleToolResultResume(
+   stream: boolean,
+   requestId?: string,
+ ): void {
+-  const { bridge, heartbeatTimer, blobStore, mcpTools, pendingExecs, currentTurn } = active;
++  const { bridge, heartbeatTimer, blobStore, mcpTools, cloudRule, pendingExecs, currentTurn } = active;
+   debugLog("tool_resume.start", { requestId, bridgeKey, convKey, toolResults, pendingExecs, currentTurn });
+ 
+   for (const result of toolResults) {
+@@ -1872,6 +1995,7 @@ function handleToolResultResume(
+       heartbeatTimer,
+       blobStore,
+       mcpTools,
++      cloudRule,
+       pendingExecs,
+       currentTurn,
+     });
+@@ -1883,6 +2007,11 @@ function handleToolResultResume(
+   for (const exec of pendingExecs) {
+     const result = turnResults.get(exec.toolCallId);
+     if (!result) continue;
++    if (exec.native) {
++      sendNativeExecResult(exec, result.content, (data) => bridge.write(data));
++      debugLog("tool_resume.sent_native_result", { requestId, exec, result });
++      continue;
++    }
+     const mcpResult = create(McpResultSchema, {
+       result: {
+         case: "success",
+@@ -1917,6 +2046,7 @@ function handleToolResultResume(
+     heartbeatTimer,
+     blobStore,
+     mcpTools,
++    cloudRule,
+     modelId,
+     bridgeKey,
+     convKey,
+@@ -1972,7 +2102,7 @@ async function handleNonStreamingResponse(
+         try {
+           const serverMessage = fromBinary(AgentServerMessageSchema, messageBytes);
+           processServerMessage(
+-            serverMessage, payload.blobStore, payload.mcpTools,
++            serverMessage, payload.blobStore, payload.mcpTools, payload.cloudRule,
+             (data) => bridge.write(data),
+             state,
+             (text, isThinking) => {
+@@ -1982,6 +2112,13 @@ async function handleNonStreamingResponse(
+               appendAssistantTextToTurn(currentTurn, content);
+             },
+             () => {},
++            (detail) => {
++              console.error(`[cursor-provider] ${detail}`);
++              conversationStates.delete(convKey);
++              nonStreamError = new Error(detail);
++              sendCancelAction(bridge);
++              bridge.end();
++            },
+             (checkpointBytes) => {
+               latestCheckpoint = checkpointBytes;
+               const stored = conversationStates.get(convKey);
