@@ -13,7 +13,7 @@ patchedDependencies:
   '@earendil-works/chord@1.4.0': fdfa38e41e6b1b7d505e46b455f93d913c72b0cef63a5716a4a6a141f4e06416
   '@earendil-works/pi-claude-code@0.1.0': d590f92cd94ede96088ba1d98e62c747a8ea8e2ec227935b273c3354e59cc552
   '@earendil-works/pi-durable@1.4.0': a0165c080771a5d6729a7e718a31d978b9920fdc3c13c5adc22c4125864e961f
-  pi-cursor-provider@0.1.11: f240a279e0d70fbc8b016f893f298bab7e2c0e9da46883904593a0ee01bb9a50
+  pi-cursor-provider@0.1.11: 8b2dd2a11d1614699e65283aea3dad7b9c53861a4e5a6223a30c7568f35631e6
 
 importers:
 
@@ -84,7 +84,7 @@ importers:
         version: 1.0.11
       pi-cursor-provider:
         specifier: 0.1.11
-        version: 0.1.11(patch_hash=f240a279e0d70fbc8b016f893f298bab7e2c0e9da46883904593a0ee01bb9a50)
+        version: 0.1.11(patch_hash=8b2dd2a11d1614699e65283aea3dad7b9c53861a4e5a6223a30c7568f35631e6)
       playwright-core:
         specifier: 1.63.0
         version: 1.63.0
@@ -6311,7 +6311,7 @@ snapshots:
 
   pathe@2.0.3: {}
 
-  pi-cursor-provider@0.1.11(patch_hash=f240a279e0d70fbc8b016f893f298bab7e2c0e9da46883904593a0ee01bb9a50):
+  pi-cursor-provider@0.1.11(patch_hash=8b2dd2a11d1614699e65283aea3dad7b9c53861a4e5a6223a30c7568f35631e6):
     dependencies:
       '@bufbuild/protobuf': 2.16.0
 
