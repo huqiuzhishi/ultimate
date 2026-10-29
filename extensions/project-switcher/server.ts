@@ -27,9 +27,11 @@ function launchEnvironment(parent: NodeJS.ProcessEnv) {
   )
 }
 
-async function directory(path: string) {
+async function directory(path: string, userHome: string) {
   if (typeof path !== 'string' || !path.trim()) throw new Error('Expected a project path')
-  const root = await realpath(path).catch((error: NodeJS.ErrnoException) => {
+  const expanded =
+    path === '~' ? userHome : path.startsWith('~/') ? join(userHome, path.slice(2)) : path
+  const root = await realpath(expanded).catch((error: NodeJS.ErrnoException) => {
     throw new Error(`Cannot open project ${path}: ${error.code ?? error.message}`, { cause: error })
   })
   if (!(await stat(root)).isDirectory()) throw new Error(`Project path is not a directory: ${path}`)
@@ -46,7 +48,7 @@ export async function launchProject(
   host: Pick<ExtensionHost, 'projectRoot' | 'ultimateRoot' | 'userHome'>,
   path: string,
 ) {
-  const root = await directory(path)
+  const root = await directory(path, host.userHome)
   const child = spawn(process.execPath, [join(host.ultimateRoot, 'bin/ultimate.ts'), root], {
     cwd: root,
     detached: true,

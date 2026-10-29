@@ -79,6 +79,38 @@ it('launches the canonical project with the Ultimate entrypoint and no inherited
   expect(unref).toHaveBeenCalledOnce()
 })
 
+it('expands home-relative project paths before launching canonical directories', async () => {
+  const userHome = await temp('ultimate-project-switcher-home-')
+  const child = join(userHome, 'child')
+  await mkdir(child)
+  const canonicalHome = await realpath(userHome)
+  const canonicalChild = await realpath(child)
+  const unref = vi.fn<() => void>()
+  spawn.mockReturnValue({ unref })
+  const host = {
+    projectRoot: '/current',
+    ultimateRoot: '/ultimate',
+    userHome,
+  } as ExtensionHost
+
+  await expect(launchProject(host, '~/child')).resolves.toEqual({ root: canonicalChild })
+  await expect(launchProject(host, '~')).resolves.toEqual({ root: canonicalHome })
+
+  expect(spawn).toHaveBeenNthCalledWith(
+    1,
+    process.execPath,
+    ['/ultimate/bin/ultimate.ts', canonicalChild],
+    expect.objectContaining({ cwd: canonicalChild }),
+  )
+  expect(spawn).toHaveBeenNthCalledWith(
+    2,
+    process.execPath,
+    ['/ultimate/bin/ultimate.ts', canonicalHome],
+    expect.objectContaining({ cwd: canonicalHome }),
+  )
+  expect(unref).toHaveBeenCalledTimes(2)
+})
+
 it('exposes launch but no backend termination action', () => {
   expect(userActions).toEqual(['start'])
   expect(localActions).toEqual(['start'])
