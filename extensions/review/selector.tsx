@@ -24,7 +24,7 @@ export function Selector({
 }: {
   spec: string
   title?: string
-  onChange: (spec: string) => void
+  onChange: (spec: string, conversation?: number) => void
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -39,10 +39,10 @@ export function Selector({
       )
     : list
   const groups = Map.groupBy(shown, (range) => range.group)
-  const choose = (next: string) => {
+  const choose = (next: string, conversation?: number) => {
     setOpen(false)
     setQuery('')
-    onChange(next)
+    onChange(next, conversation)
   }
   return (
     <Popover onOpenChange={setOpen} open={open}>
@@ -99,8 +99,8 @@ export function Selector({
                   {items.map((range) => (
                     <Choice
                       current={range.spec === spec}
-                      key={range.spec}
-                      onSelect={() => choose(range.spec)}
+                      key={`${range.conversation ?? 'project'}:${range.spec}`}
+                      onSelect={() => choose(range.spec, range.conversation)}
                       range={range}
                     />
                   ))}

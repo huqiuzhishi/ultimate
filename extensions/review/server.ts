@@ -21,13 +21,14 @@ export const ReviewCommentsEntry = defineEntry<ReviewComments>('review.comments'
 const index = (host: ExtensionHost, ctx: Context) =>
   host.harness().snapshot(host.need(WorkspacesApi).doc, ROOT_CONVERSATION_ID, ctx)
 
-/** Conversation `id`'s worktree while it is ready, else the project's checkout (also once it was released). */
+/** Conversation `id`'s ready worktree, or the project checkout when no conversation was requested. */
 async function where(host: ExtensionHost, id: unknown) {
   if (id === undefined) return host.projectRoot
   if (typeof id !== 'number' || !Number.isSafeInteger(id) || id < 1)
     throw new Error('conversation must be a conversation id')
   const workspace = (await index(host, context))?.items[String(id)]
-  return workspace?.state === 'ready' ? workspace.path : host.projectRoot
+  if (workspace?.state !== 'ready') throw new Error(`Workspace #${id} is not ready`)
+  return workspace.path
 }
 
 /** The branch `branch` lands on: its worktree's target, else the project checkout's branch. */
@@ -47,22 +48,26 @@ async function ranges(host: ExtensionHost): Promise<ReviewRange[]> {
   const cwd = host.projectRoot
   const items = Object.entries((await index(host, context))?.items ?? {})
   const titles = new Map(host.conversations().map((item) => [item.id, item.title]))
-  const owner = new Map(
-    items
-      .filter(([, item]) => item.state !== 'removed')
-      .map(([id, item]) => [item.branch, Number(id)]),
-  )
   const [branches, commits, landings] = await Promise.all([
-    git(
-      cwd,
-      'for-each-ref',
-      '--sort=-committerdate',
-      '--count=20',
-      '--format=%(refname:short)%09%(committerdate:unix)',
-      'refs/heads/ultimate/',
-    ).catch(
-      // No repository: the selector offers free entry only.
-      () => '',
+    Promise.all(
+      items
+        .filter(([, item]) => item.state === 'ready')
+        .map(async ([key, item]): Promise<ReviewRange> => {
+          const id = Number(key)
+          const head = await git(item.path, 'rev-parse', '--verify', 'HEAD^{commit}')
+          const targetSha = await git(item.path, 'rev-parse', '--verify', `${item.target}^{commit}`)
+          const [base, at] = await Promise.all([
+            git(item.path, 'merge-base', targetSha, head),
+            git(item.path, 'show', '-s', '--format=%ct', head),
+          ])
+          return {
+            spec: `${base}...${head}`,
+            group: 'Branches',
+            label: titles.get(id) ?? `#${id}`,
+            detail: `#${id} · ${head.slice(0, 7)} · ${ago(Number(at))}`,
+            conversation: id,
+          }
+        }),
     ),
     git(cwd, 'log', '-n', '15', '--format=%H%x09%ct%x09%s').catch(
       // No commit yet: nothing to list.
@@ -72,20 +77,8 @@ async function ranges(host: ExtensionHost): Promise<ReviewRange[]> {
   ])
   const list: ReviewRange[] = [
     { spec: 'uncommitted', group: 'Working tree', label: 'Uncommitted changes' },
+    ...branches,
   ]
-  for (const line of branches.split('\n').filter(Boolean)) {
-    const [branch, at] = line.split('\t') as [string, string]
-    const id = owner.get(branch)
-    // Only branches of a live worktree: a landed and removed one has nothing left to review.
-    if (id === undefined) continue
-    list.push({
-      spec: `branch:${branch}`,
-      group: 'Branches',
-      label: titles.get(id) ?? `#${id}`,
-      detail: `#${id} · ${ago(Number(at))}`,
-      conversation: id,
-    })
-  }
   for (const { data, at } of landings)
     list.push({
       spec: `${data.base}...${data.sha}`,

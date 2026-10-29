@@ -1,15 +1,15 @@
-The Review surface: the project's local Git diffs, its files on the left and their changes on the right, rendered with `@pierre/diffs` in Ultimate's fonts and colours.
+The Review surface: local Git diffs from the project or a ready conversation workspace, with files on the left and changes on the right, rendered with `@pierre/diffs` in Ultimate's fonts and colours.
 
 What it shows is a **spec**:
 
 - `uncommitted`: the work tree against `HEAD`, untracked files included (ignored ones not). `uncommitted:<id>` is the
-  same in conversation `id`'s worktree (the project checkout once it has none); its default recipient is `id`.
+  same in conversation `id`'s ready worktree; its default recipient is `id`.
 - `<sha>` (or any ref naming a commit): that commit against its first parent; a root commit against the empty tree.
 - `<a>...<b>`: what `b` changed since it forked from `a`, as a landing's `<base>...<sha>`.
 - `branch:<name>`: the branch against the target branch it lands on (its worktree's target, else the project checkout's branch).
 
 The header picks the spec (recent choices from `ranges`, or any spec typed in), sums `+N −M · K files`, switches split and
-unified, and links the range to DiffsHub when `origin` is on GitHub. On a phone the file list is a dropdown and the
+unified, and links a project-checkout range to DiffsHub when `origin` is on GitHub. On a phone the file list is a dropdown and the
 diff is unified. The diff stack is virtualized; the viewer loads with the surface, not with the app.
 
 **Comments.** Click a line number (shift-click or drag for a range, on either side) or the gutter `+` to open an
@@ -29,6 +29,7 @@ comment's `file:line` chip opening Review there. The model reads `reviewText` (`
 in them, with control characters such as a newline written as`\n`.
 
 Links: `/?review=<spec>` opens Review at that spec, and the address carries `?review=` while Review is on screen;
+a selected branch range also carries `&workspace=<id>` so the immutable SHAs resolve in the right repository.
 `&file=<path>&line=<n>` (and `&side=old`) scrolls to that line and marks it.
 `openReview(spec, at?)` from `ui.tsx` does the same from code. Review provides the `workspaces.review` point, so the
 landing card, the Activity feed and a root's landed list open a landing's commit count here (DiffsHub stays as a small
@@ -37,14 +38,16 @@ landing card, the Activity feed and a root's landed list open a landing's commit
 Actions (`refs.ts`):
 
 - `diff { spec, conversation? }` → `{ spec, kind, title, base?, head?, patch, files, truncated? }`. Runs in
-  `conversation`'s worktree while it has one, else the project checkout. Every ref is checked with
+  `conversation`'s ready worktree when requested, otherwise the project checkout; an unavailable requested workspace
+  is an error rather than a fallback. Every ref is checked with
   `git rev-parse --verify` as a commit, and any part starting with `-` is refused. A file's patch over 400 KB is listed
   as `tooLarge` without hunks; past 8 MB in all, later files are too and the diff is `truncated` (caps count bytes).
   An untracked symlink shows as a new file whose one line is its target (one with a path git would quote or a
   multi-line target is listed as `symlink`, without hunks); a file that became a symlink or stopped
   being one is listed as `typeChanged`, without hunks.
-- `ranges` → recent specs: uncommitted, open `ultimate/*` branches with their conversation, the last ten landings
-  (`workspaces.landed` events) and the last fifteen commits; branches and landings carry their `conversation`.
+- `ranges` → fresh immutable `<merge-base SHA>...<HEAD SHA>` specs for every ready workspace, plus uncommitted, the
+  last ten landings (`workspaces.landed` events) and the last fifteen commits. Workspace ranges are resolved from each
+  checkout's actual path and target whenever the selector opens, and carry their owning `conversation`.
 - `recipient { spec }` → `{ conversation }`: a `branch:` spec's worktree owner, a landing range's submitter (by its
   tip in `workspaces.landed`), a commit's `Ultimate-Conversation` trailer, else the primary agent.
 - `send { conversation, spec, comments, note? }` (user only) → `{ conversation }`. At most 50 comments, each text up

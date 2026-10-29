@@ -60,13 +60,14 @@ export type ReviewRange = {
 
 /**
  * `{ spec, conversation? }` → the diff of `spec` in the project's checkout, or in conversation `conversation`'s
- * worktree while it has one. Throws on a spec or ref Git does not know as a commit, and on any part starting with `-`.
+ * ready worktree. Throws when a requested workspace is unavailable, on a spec or ref Git does not know as a commit,
+ * and on any part starting with `-`.
  */
 export const DiffAction = actionRef<{ spec: string; conversation?: number }, ReviewDiff>(
   'review',
   'diff',
 )
-/** No arguments → recent specs to choose from: uncommitted, open `ultimate/*` branches, landings and commits. */
+/** No arguments → fresh immutable ranges for every ready workspace, plus uncommitted, landings and recent commits. */
 export const RangesAction = actionRef<null, ReviewRange[]>('review', 'ranges')
 /**
  * `{ spec }` → the conversation a review of `spec` goes to by default: a branch's owner, a landing's submitter, the

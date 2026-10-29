@@ -43,7 +43,7 @@ import type { Draft, Drafts } from './drafts.ts'
 import { Footer } from './footer.tsx'
 import { commentRange, excerptFor } from './lines.ts'
 import type { CommentLines } from './lines.ts'
-import { reachedTarget, useSpec, useTarget } from './link.tsx'
+import { reachedTarget, useReviewWorkspace, useSpec, useTarget } from './link.tsx'
 import type { ReviewTarget } from './link.tsx'
 import { Frame, Loading, Notice } from './parts.tsx'
 import { Recipient } from './recipient.tsx'
@@ -515,16 +515,19 @@ function Sent({
 /** The Review surface: a spec's diff, its files on the left and their changes stacked on the right. */
 export default function ReviewSurface() {
   const [spec, setSpec] = useSpec()
+  const [workspace, setWorkspace] = useReviewWorkspace()
   const [stored, setLayout] = useExtensionUiState('layout', 'split')
   const layout = stored === 'unified' ? 'unified' : 'split'
   const phone = useViewport() === 'phone'
-  // The diff runs in the project checkout: no conversation's worktree, so drafts are the project's for this spec.
-  const args: { spec: string; conversation?: number } = { spec }
+  const args: { spec: string; conversation?: number } = {
+    spec,
+    ...(workspace !== null && { conversation: workspace }),
+  }
   const diff = useAction(DiffAction, args, { onError: () => undefined })
   const github = useGithubRepo()
   const [drafts, update] = useDrafts(draftsKey(spec, args.conversation))
   const suggested = useAction(RecipientAction, { spec }, { onError: () => undefined })
-  const to = drafts.to ?? suggested.data?.conversation
+  const to = drafts.to ?? args.conversation ?? suggested.data?.conversation
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState<{ conversation: number } | { error: string }>()
   const { switchConversation, showSurface } = useUltimate()
@@ -588,7 +591,11 @@ export default function ReviewSurface() {
   )
   // A worktree branch is local until it lands, so only commits and ranges (landings) are on GitHub to compare.
   const compare =
-    github && data?.base && data.head && (data.kind === 'commit' || data.kind === 'range')
+    workspace === null &&
+    github &&
+    data?.base &&
+    data.head &&
+    (data.kind === 'commit' || data.kind === 'range')
       ? compareUrl(github, data.base, data.head)
       : undefined
   return (
@@ -596,8 +603,9 @@ export default function ReviewSurface() {
       controls={
         <>
           <Selector
-            onChange={(next) => {
+            onChange={(next, conversation) => {
               setSent(undefined)
+              setWorkspace(conversation ?? null)
               setSpec(next)
             }}
             spec={spec}
