@@ -2,6 +2,8 @@ import { implementAction } from '../../lib/actions.ts'
 import { matchingFiles } from './match.ts'
 import { SearchFilesAction } from './refs.ts'
 
+export default { name: 'files' }
+
 /** Escape user text inside Git's glob pathspec. */
 const globLiteral = (text: string) =>
   text
