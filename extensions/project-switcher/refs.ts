@@ -10,8 +10,8 @@ export type Project = {
 
 /** No arguments → the local projects known to this Ultimate installation. */
 export const ListAction = actionRef<null, Project[]>('project-switcher', 'list')
-/** `{ root }` → launch a separate Ultimate supervisor for that existing host directory. */
-export const StartAction = actionRef<{ root: string }, { root: string }>(
+/** `{ root }` → the ready URL of that canonical project's own Ultimate supervisor. */
+export const StartAction = actionRef<{ root: string }, { root: string; url: string }>(
   'project-switcher',
   'start',
 )

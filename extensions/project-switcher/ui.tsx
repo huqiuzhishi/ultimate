@@ -19,6 +19,34 @@ const isLoopback = (hostname: string) =>
 
 type Pending = { root: string } | undefined
 
+type ProjectTab = {
+  close(): void
+  location: { replace(url: string): void }
+  opener: unknown
+}
+
+/** Claim a browser tab during the user gesture, then point it at the selected ready backend. */
+export async function openProjectTab(
+  root: string,
+  launch: (args: { root: string }) => Promise<{ root: string; url: string }> = (args) =>
+    api.action(StartAction, args),
+  open: (url: string, target: string) => ProjectTab | null = (url, target) =>
+    window.open(url, target),
+) {
+  const tab = open('', '_blank')
+  if (!tab)
+    throw new Error('Your browser blocked the new tab. Allow pop-ups for Ultimate and try again.')
+  tab.opener = null
+  try {
+    const project = await launch({ root })
+    tab.location.replace(project.url)
+    return project
+  } catch (error) {
+    tab.close()
+    throw error
+  }
+}
+
 /** Dense rows for known projects; opening always delegates to the supervisor launcher. */
 export function ProjectList({
   projects,
@@ -114,7 +142,7 @@ export function ProjectSwitcher() {
     setError(undefined)
     setPending({ root: project.root })
     try {
-      await api.action(StartAction, { root: project.root })
+      await openProjectTab(project.root)
       await inventory.refetch()
       return true
     } catch (failure) {
