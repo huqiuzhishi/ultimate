@@ -4,6 +4,7 @@ import { expect, it } from 'vitest'
 import { runLanderCheck } from '../../extensions/workspaces/lander.ts'
 import { context } from '../../server/harness.ts'
 import { removeTemp, temp } from '../helpers.ts'
+import { processRunning } from './process.ts'
 
 it('kills a silent process group on stall and a printing process on the total cap', async () => {
   const directory = await temp('ultimate-lander-watchdog-')
@@ -11,7 +12,8 @@ it('kills a silent process group on stall and a printing process on the total ca
     for (const printing of [false, true]) {
       const pidFile = join(directory, 'pid')
       const childFile = join(directory, 'child')
-      const command = `echo $$ > '${pidFile}'; sleep 10 & echo $! > '${childFile}'; ${printing ? 'while true; do echo progress; sleep 0.02; done' : 'wait'}`
+      // Builtin output avoids an external sleep or runtime startup exceeding the deliberately tiny stall limit.
+      const command = `echo $$ > '${pidFile}'; sleep 10 & echo $! > '${childFile}'; ${printing ? 'while true; do echo progress; done' : 'wait'}`
       const pids = join(directory, 'pids')
       const tmp = join(directory, 'tmp')
       const result = await runLanderCheck(directory, command, context, pids, tmp, {
@@ -25,9 +27,7 @@ it('kills a silent process group on stall and a printing process on the total ca
       const pid = Number(await readFile(pidFile, 'utf8'))
       expect(() => process.kill(pid, 0)).toThrow('ESRCH')
       const child = Number(await readFile(childFile, 'utf8'))
-      // A killed orphan may remain a zombie until init reaps it; it must not still be running.
-      const stat = await readFile(`/proc/${child}/stat`, 'utf8').catch(() => '')
-      expect(stat === '' || stat.split(' ')[2] === 'Z').toBe(true)
+      expect(processRunning(child)).toBe(false)
     }
   } finally {
     await removeTemp(directory)

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readFile, writeFile, unlink, rename } from 'node:fs/promises'
 import { DatabaseSync } from 'node:sqlite'
 
@@ -21,16 +22,23 @@ export async function retireStorageOwner(path: string) {
   }
   const owner = await readOwner(path)
   if (!owner || !alive(owner.pid)) return
-  let command: string
+  let command: string[]
   try {
-    command = await readFile(`/proc/${owner.pid}/cmdline`, 'utf8')
+    command =
+      process.platform === 'darwin'
+        ? execFileSync('ps', ['-o', 'command=', '-p', String(owner.pid)], {
+            encoding: 'utf8',
+          })
+            .trim()
+            .split(' ')
+        : (await readFile(`/proc/${owner.pid}/cmdline`, 'utf8')).split('\0')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT' && !alive(owner.pid)) return
+    if (!alive(owner.pid)) return
     throw new Error(`Cannot verify storage owner pid ${owner.pid}; refusing to signal it`, {
       cause: error,
     })
   }
-  if (!command.split('\0').some((arg) => /(?:^|\/)server\/main\.ts$/.test(arg)))
+  if (!command.some((arg) => /(?:^|\/)server\/main\.ts$/.test(arg)))
     throw new Error(`Storage owner pid ${owner.pid} is not an Ultimate core; refusing to signal it`)
   const signal = (name: NodeJS.Signals) => {
     try {

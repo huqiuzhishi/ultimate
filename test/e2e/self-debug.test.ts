@@ -4,16 +4,27 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { sourceCopy, cleanEnv, until, temp, removeTemp } from '../helpers.ts'
+import { processRunning } from './process.ts'
 
 it('terminates an isolated instance after its owner is SIGKILLed', async () => {
   const home = await temp('ultimate-owner-test-')
   const ultimateRoot = await sourceCopy(home)
   const resultPath = join(home, 'instance.json')
+  const environmentPath = join(home, 'instance-environment.json')
   // Faux previews publish on Tailscale; keep this one off the machine's real tailnet.
-  await mkdir(join(home, '.ultimate'), { recursive: true })
+  await mkdir(join(home, '.ultimate/extensions/instance-environment'), { recursive: true })
   await writeFile(
     join(home, '.ultimate/settings.json'),
     JSON.stringify({ extensions: { disable: ['tailscale'] } }),
+  )
+  await writeFile(
+    join(home, '.ultimate/extensions/instance-environment/server.ts'),
+    `import { writeFileSync } from 'node:fs'
+import { defineExtension } from '@earendil-works/pi-durable'
+const keys = ['ULTIMATE_SUPERVISED', 'ULTIMATE_PUBLIC_URL', 'ULTIMATE_GENERATION', 'ULTIMATE_PREVIOUS_BUILD', 'ULTIMATE_HOME', 'ULTIMATE_PORT', 'ULTIMATE_NO_OPEN', 'ULTIMATE_INSTANCE_OWNER', 'ANTHROPIC_API_KEY', 'HTTPS_PROXY', 'NODE_EXTRA_CA_CERTS', 'ULTIMATE_CHROMIUM']
+if (process.env.ULTIMATE_INSTANCE_OWNER) writeFileSync(${JSON.stringify(environmentPath)}, JSON.stringify(Object.fromEntries(keys.flatMap(key => process.env[key] === undefined ? [] : [[key, process.env[key]]]))))
+export default defineExtension({ name: 'instance-environment' })
+`,
   )
   const code = `
     import {createServer} from './server/main.ts';
@@ -63,20 +74,11 @@ it('terminates an isolated instance after its owner is SIGKILLed', async () => {
     const port = Number(new URL(instance!.url).port)
     expect(port).toBeGreaterThan(0)
     expect(port).toBeLessThanOrEqual(65535)
-    const environment = await readFile(`/proc/${instance!.pid}/environ`, 'utf8')
-    expect(environment).not.toContain('ULTIMATE_SUPERVISED=')
-    expect(environment).not.toContain('ULTIMATE_PUBLIC_URL=')
-    expect(environment).not.toContain('ULTIMATE_GENERATION=')
-    expect(environment).not.toContain('ULTIMATE_PREVIOUS_BUILD=')
-    const env = Object.fromEntries(
-      environment
-        .split('\0')
-        .filter(Boolean)
-        .map((entry) => {
-          const separator = entry.indexOf('=')
-          return [entry.slice(0, separator), entry.slice(separator + 1)]
-        }),
-    )
+    const env = JSON.parse(await readFile(environmentPath, 'utf8'))
+    expect(env).not.toHaveProperty('ULTIMATE_SUPERVISED')
+    expect(env).not.toHaveProperty('ULTIMATE_PUBLIC_URL')
+    expect(env).not.toHaveProperty('ULTIMATE_GENERATION')
+    expect(env).not.toHaveProperty('ULTIMATE_PREVIOUS_BUILD')
     expect(env).toMatchObject({
       ULTIMATE_HOME: instance!.home,
       ULTIMATE_PORT: '0',
@@ -90,13 +92,7 @@ it('terminates an isolated instance after its owner is SIGKILLed', async () => {
     const exited = once(owner, 'exit')
     owner.kill('SIGKILL')
     await exited
-    await until(async () => {
-      try {
-        return /\) Z /.test(await readFile(`/proc/${instance!.pid}/stat`, 'utf8'))
-      } catch {
-        return true
-      }
-    }, 5000)
+    await until(() => !processRunning(instance!.pid), 5000)
   } finally {
     if (owner.exitCode === null && owner.signalCode === null) {
       const exited = once(owner, 'exit')
