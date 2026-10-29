@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { expect, it, vi } from 'vitest'
+import { expect, it } from 'vitest'
 import {
   groupAlive,
   runGroup,
@@ -10,15 +10,23 @@ import {
   sweepPidFiles,
 } from '../../lib/process-group.ts'
 import { removeTemp, temp, until } from '../helpers.ts'
+import { processRunning } from './process.ts'
 
-/** Whether process `pid` still runs; a killed orphan may stay a zombie until init reaps it. */
-const running = async (pid: number) => {
-  const stat = await readFile(`/proc/${pid}/stat`, 'utf8').catch(() => '')
-  return stat !== '' && stat.slice(stat.lastIndexOf(')') + 2)[0] !== 'Z'
+const nativeKill = process.kill.bind(process)
+const denySignals = () => {
+  process.kill = () => {
+    throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' })
+  }
 }
-const startTicks = async (pid: number) =>
-  (await readFile(`/proc/${pid}/stat`, 'utf8')).split(') ')[1].split(' ')[19]
-const bootId = async () => (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim()
+
+const killIfRunning = (pid: number) => {
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch (error) {
+    // Cleanup can race the process exiting on its own.
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+  }
+}
 
 it('records the pid and start time before the program runs, and the program keeps that pid', async () => {
   const directory = await temp('ultimate-process-group-')
@@ -32,9 +40,9 @@ it('records the pid and start time before the program runs, and the program keep
     child.stdout.setEncoding('utf8').on('data', (text: string) => (output += text))
     await closed
     expect(output).toBe(`${child.pid}\n${child.pid}\n`)
-    expect(await readFile(`${pidFile}.start`, 'utf8')).toMatch(
-      new RegExp(`^${await bootId()}:\\d+\n$`),
-    )
+    const identity = await readFile(`${pidFile}.start`, 'utf8')
+    expect(identity).toMatch(/^\S.*\n$/)
+    expect(identity.trim()).not.toBe('undefined')
   } finally {
     await removeTemp(directory)
   }
@@ -64,7 +72,7 @@ it('stops what a leader left in its group when it exits', async () => {
     const childFile = join(directory, 'child')
     const group = spawnGroup('/bin/sh', ['-c', `sleep 60 & echo $! > '${childFile}'`], {})
     expect(await group.ended).toBe(true)
-    expect(await running(Number(await readFile(childFile, 'utf8')))).toBe(false)
+    expect(processRunning(Number(await readFile(childFile, 'utf8')))).toBe(false)
     // Its leader is reaped, so stopping it again signals nothing and only confirms it is gone.
     await stopGroup(group.child.pid!, { leader: group })
   } finally {
@@ -76,20 +84,18 @@ it('reports a group it may not probe (EPERM) as not ended instead of throwing fr
   const directory = await temp('ultimate-process-group-')
   const childFile = join(directory, 'child')
   // A member under another user answers EPERM; that needs root to set up, so the probe is made to answer it.
-  const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
-    throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' })
-  })
+  denySignals()
   try {
     const group = spawnGroup('/bin/sh', ['-c', `sleep 60 & echo $! > '${childFile}'`], {})
     expect(await group.ended).toBe(false)
-    kill.mockRestore()
+    process.kill = nativeKill
     await expect(stopGroup(group.child.pid!, { leader: group, grace: 50 })).rejects.toThrow(
       'did not exit',
     )
   } finally {
-    kill.mockRestore()
+    process.kill = nativeKill
     const child = Number(await readFile(childFile, 'utf8').catch(() => '0'))
-    if (child) process.kill(child, 'SIGKILL')
+    if (child) killIfRunning(child)
     await removeTemp(directory)
   }
 })
@@ -98,32 +104,32 @@ it('stops a group that once reported a survivor once nothing of it is left', asy
   const directory = await temp('ultimate-process-group-')
   const pidFile = join(directory, 'run.pid')
   const childFile = join(directory, 'child')
-  const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
-    throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' })
-  })
+  denySignals()
   try {
     const group = spawnGroup('/bin/sh', ['-c', `sleep 60 & echo $! > '${childFile}'`], {
       pidFile,
     })
     expect(await group.ended).toBe(false)
-    kill.mockRestore()
+    process.kill = nativeKill
     // The survivor goes later on its own: the settled `ended` must not keep the group stuck.
-    process.kill(Number(await readFile(childFile, 'utf8')), 'SIGKILL')
-    await until(() => !groupAlive(group.child.pid))
+    const child = Number(await readFile(childFile, 'utf8'))
+    process.kill(child, 'SIGKILL')
+    await until(() => !processRunning(child))
     await stopGroup(group.child.pid!, { pidFile, leader: group, grace: 50 })
     expect(await readdir(directory)).toEqual(['child'])
   } finally {
-    kill.mockRestore()
+    process.kill = nativeKill
     const child = Number(await readFile(childFile, 'utf8').catch(() => '0'))
     // Usually killed by the test already.
-    if (child && (await running(child))) process.kill(child, 'SIGKILL')
+    if (child && processRunning(child)) killIfRunning(child)
     await removeTemp(directory)
   }
 })
 
 it('never signals a pid file whose pid now names another process, or a group whose leader is gone', async () => {
   const directory = await temp('ultimate-process-group-')
-  const stranger = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' })
+  const pidFile = join(directory, 'run.pid')
+  const stranger = spawnGroup('sleep', ['60'], { pidFile })
   // A group whose leader exited while a member lives on.
   const orphaned = spawn('/bin/sh', ['-c', 'sleep 60 & echo $!'], { detached: true })
   const member = await new Promise<string>((resolve) =>
@@ -131,47 +137,43 @@ it('never signals a pid file whose pid now names another process, or a group who
   )
   await new Promise((resolve) => orphaned.once('exit', resolve))
   try {
-    const pidFile = join(directory, 'run.pid')
     // The same pid, started at another moment: a recycled pid.
-    await writeFile(pidFile, `${stranger.pid}\n`)
-    await writeFile(
-      `${pidFile}.start`,
-      `${await bootId()}:${Number(await startTicks(stranger.pid!)) - 1}\n`,
-    )
-    await stopGroup(stranger.pid!, { pidFile, grace: 100 })
-    expect(groupAlive(stranger.pid)).toBe(true)
+    const identity = (await readFile(`${pidFile}.start`, 'utf8')).trim()
+    await writeFile(`${pidFile}.start`, `${identity}:stale\n`)
+    await stopGroup(stranger.child.pid!, { pidFile, grace: 100 })
+    expect(groupAlive(stranger.child.pid)).toBe(true)
     expect(await readdir(directory)).toEqual([])
     await writeFile(pidFile, `${orphaned.pid}\n`)
     await stopGroup(orphaned.pid!, { pidFile, grace: 100 })
     expect(groupAlive(orphaned.pid)).toBe(true)
   } finally {
-    process.kill(-stranger.pid!, 'SIGKILL')
-    process.kill(-orphaned.pid!, 'SIGKILL')
-    await until(async () => !(await running(Number(member))))
+    await stopGroup(stranger.child.pid!, { pidFile, leader: stranger, grace: 100 })
+    killIfRunning(-orphaned.pid!)
+    await until(() => !processRunning(Number(member)))
     await removeTemp(directory)
   }
 })
 
 it('sweeps the groups that pid files a crash left behind name, keeping the ones asked for', async () => {
   const directory = await temp('ultimate-process-group-')
-  const orphan = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' })
-  const live = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' })
+  const orphan = spawnGroup('sleep', ['60'], { pidFile: join(directory, 'left.pid') })
+  const live = spawnGroup('sleep', ['60'], { pidFile: join(directory, 'live.pid') })
   try {
-    await writeFile(join(directory, 'left.pid'), `${orphan.pid}\n`)
-    await writeFile(
-      join(directory, 'left.pid.start'),
-      `${await bootId()}:${await startTicks(orphan.pid!)}\n`,
-    )
-    await writeFile(join(directory, 'live.pid'), `${live.pid}\n`)
     await writeFile(join(directory, 'note.txt'), 'not a pid file')
     await sweepPidFiles(directory, (name) => name === 'live.pid')
-    await until(() => !groupAlive(orphan.pid))
-    expect(groupAlive(live.pid)).toBe(true)
-    expect((await readdir(directory)).toSorted()).toEqual(['live.pid', 'note.txt'])
+    await until(() => !groupAlive(orphan.child.pid))
+    expect(groupAlive(live.child.pid)).toBe(true)
+    expect((await readdir(directory)).toSorted()).toEqual([
+      'live.pid',
+      'live.pid.start',
+      'note.txt',
+    ])
     await sweepPidFiles(join(directory, 'missing'))
   } finally {
-    for (const child of [orphan, live])
-      if (groupAlive(child.pid)) process.kill(-child.pid!, 'SIGKILL')
+    for (const group of [orphan, live]) {
+      killIfRunning(group.child.pid!)
+      await group.ended
+    }
     await removeTemp(directory)
   }
 })
@@ -230,7 +232,7 @@ it('returns when a process outside the group keeps its output open', async () =>
     expect(Date.now() - began).toBeLessThan(5000)
   } finally {
     const escaped = Number(await readFile(pidFile, 'utf8').catch(() => '0'))
-    if (escaped) process.kill(escaped, 'SIGKILL')
+    if (escaped) killIfRunning(escaped)
     await removeTemp(directory)
   }
 })

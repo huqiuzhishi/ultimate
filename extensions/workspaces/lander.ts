@@ -211,7 +211,7 @@ export async function runLanderCheck(
   temp: string,
   limits: CheckLimits = checkLimits,
 ) {
-  // Synchronous, so the watchdog's timers start in the same tick as the call.
+  // Prepare the temp directory before the process starts; its onStart hook begins the watchdog timers.
   mkdirSync(temp, { recursive: true })
   const tmp = mkdtempSync(join(temp, `${process.pid}-`))
   let output = ''
@@ -229,11 +229,15 @@ export async function runLanderCheck(
     watchdog.abort()
   }
   const stalled = () => stop(`Stalled: no output for ${seconds(limits.stall)}, stopped`)
-  let stallTimer = setTimeout(stalled, limits.stall * 1000)
-  const totalTimer = setTimeout(
-    () => stop(`Timed out after ${seconds(limits.total)}`),
-    limits.total * 1000,
-  )
+  let stallTimer: NodeJS.Timeout | undefined
+  let totalTimer: NodeJS.Timeout | undefined
+  const startTimers = () => {
+    stallTimer = setTimeout(stalled, limits.stall * 1000)
+    totalTimer = setTimeout(
+      () => stop(`Timed out after ${seconds(limits.total)}`),
+      limits.total * 1000,
+    )
+  }
   /** A watchdog report: the limit that fired, the failed tests seen so far, then the output tail. */
   const watchdogFailure = (reason: string) => {
     const tests = [...failed].slice(-20)
@@ -261,6 +265,7 @@ export async function runLanderCheck(
         pidFile: join(pids, `${process.pid}-${randomUUID()}.pid`),
         signal,
         grace: 2000,
+        onStart: startTimers,
         onOutput,
       })
     } catch (error) {

@@ -46,25 +46,29 @@ function identify(pid: number): string | undefined {
   return `${readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim()}:${ticks}`
 }
 
-/** Whether any process of group `pid` still exists. */
+/** Whether a Darwin group that answered EPERM still has a visible live member. */
+function darwinGroupHasLiveMember(pid: number) {
+  const rows = execFileSync('ps', ['-axo', 'pgid=,stat='], { encoding: 'utf8' })
+  for (const row of rows.split('\n')) {
+    const match = row.trim().match(/^(\d+)\s+(\S+)/)
+    if (Number(match?.[1]) !== pid) continue
+    if (!match![2].startsWith('Z')) return true
+  }
+  return false
+}
+
+/** Whether any live process of group `pid` still exists. */
 export function groupAlive(pid?: number) {
   if (!pid) return false
   try {
     process.kill(-pid, 0)
     return true
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false
-    throw error
-  }
-}
-
-/** Like `groupAlive`, but a member this process may not probe (EPERM) counts as alive. */
-function probe(pid: number) {
-  try {
-    return groupAlive(pid)
-  } catch (error) {
-    // A member of another user survived, so the group is still there.
-    if ((error as NodeJS.ErrnoException).code === 'EPERM') return true
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ESRCH') return false
+    if (code === 'EPERM')
+      // Darwin answers EPERM for zombie-only groups, which have already stopped.
+      return process.platform !== 'darwin' || darwinGroupHasLiveMember(pid)
     throw error
   }
 }
@@ -73,8 +77,13 @@ function send(pid: number, name: NodeJS.Signals) {
   try {
     process.kill(-pid, name)
   } catch (error) {
-    // The group may empty between the check and the signal.
-    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    const code = (error as NodeJS.ErrnoException).code
+    // The group may empty between the check and the signal. Darwin also answers EPERM for zombie-only groups.
+    if (
+      code !== 'ESRCH' &&
+      !(code === 'EPERM' && process.platform === 'darwin' && !darwinGroupHasLiveMember(pid))
+    )
+      throw error
   }
 }
 
@@ -127,8 +136,8 @@ export function spawnGroup(
   })
   const left = new Promise<boolean>((resolve, reject) => {
     child.once('error', () => resolve(false))
-    // Checked in the same tick as the leader's reaping, so a group still there is ours. A member this process may not
-    // probe (EPERM) must not throw inside the listener.
+    // Checked in the same tick as the leader's reaping, so a group still there is ours. groupAlive treats a live
+    // member this process may not probe (EPERM) as present.
     child.once('exit', () => {
       try {
         resolve(groupAlive(child.pid))
@@ -200,7 +209,7 @@ export async function stopGroup(
     }
     // After a KILL the leader's exit drains the rest of the group, with its own grace. `ended` is settled once and
     // for all, so a group that reported a survivor is probed again: once empty, it exited after all.
-    if (!(await within(leader.ended, grace + 3500)) && (unreaped() || probe(pid)))
+    if (!(await within(leader.ended, grace + 3500)) && (unreaped() || groupAlive(pid)))
       throw new Error(`Process group ${pid} did not exit`)
   } else {
     const recorded = pidFile && (await readPidFile(pidFile)) === pid
@@ -249,10 +258,11 @@ export async function runGroup(
     env?: NodeJS.ProcessEnv
     signal?: AbortSignal
     grace?: number
+    onStart?: () => void
     onOutput: (text: string) => void
   },
 ) {
-  const { signal, grace, onOutput, ...spawnOptions } = options
+  const { signal, grace, onStart, onOutput, ...spawnOptions } = options
   await mkdir(dirname(options.pidFile), { recursive: true })
   signal?.throwIfAborted()
   const group = spawnGroup(program, args, { ...spawnOptions, grace })
@@ -277,6 +287,7 @@ export async function runGroup(
     stop().catch(failure.reject)
   }
   signal?.addEventListener('abort', halt, { once: true })
+  onStart?.()
   try {
     const code = await Promise.race([exited, failure.promise])
     await stop()

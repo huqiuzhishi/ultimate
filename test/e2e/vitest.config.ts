@@ -6,6 +6,7 @@ export default defineConfig({
     setupFiles: ['test/setup.ts'],
     include: ['test/e2e/**/*.test.ts'],
     testTimeout: 60_000,
-    maxWorkers: 4,
+    // macOS process and Vite fixtures slow down under four-way contention; three workers finish sooner.
+    maxWorkers: process.platform === 'darwin' ? 3 : 4,
   },
 })

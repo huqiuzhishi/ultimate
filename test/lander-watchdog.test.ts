@@ -28,6 +28,7 @@ afterEach(() => {
 function hanging(outputEvery?: number, line = 'progress\n') {
   vi.useFakeTimers()
   vi.mocked(runGroup).mockImplementation(async (_program, _args, options) => {
+    options.onStart?.()
     const timer = outputEvery ? setInterval(() => options.onOutput(line), outputEvery) : undefined
     // Like runGroup, a signal that aborted before the start stops the run at once.
     if (!options.signal!.aborted)
@@ -58,6 +59,7 @@ it('resets the stall timer on output but stops continuous output at the total li
 it('keeps the timeout classification when process-group teardown fails', async () => {
   vi.useFakeTimers()
   vi.mocked(runGroup).mockImplementation(async (_program, _args, options) => {
+    options.onStart?.()
     if (!options.signal!.aborted)
       await new Promise<void>((resolve) =>
         options.signal!.addEventListener('abort', () => resolve(), { once: true }),
@@ -164,6 +166,7 @@ it('preserves task cancellation instead of reporting a watchdog failure', async 
 it('keeps successful summaries and clears both timers', async () => {
   vi.useFakeTimers()
   vi.mocked(runGroup).mockImplementation(async (_program, _args, options) => {
+    options.onStart?.()
     options.onOutput('first\nlast\n')
     return 0
   })
@@ -175,6 +178,7 @@ it('gives each check its own TMPDIR in the given directory and removes it afterw
   const temp = await mkdtemp(join(tmpdir(), 'lander-tmp-'))
   let seen: string | undefined
   vi.mocked(runGroup).mockImplementation(async (_program, _args, options) => {
+    options.onStart?.()
     seen = options.env?.TMPDIR
     await writeFile(join(seen!, 'left'), '')
     return 1
