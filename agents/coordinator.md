@@ -59,7 +59,7 @@ The worker can only be as good as its brief. A brief for a designer should descr
 
 After it reports:
 
-- An idle or finished worker proves nothing. Read its diff, check its citations, and read its last full test run in its transcript (`ultimate.entries(id)`): a recorded exit code is evidence, a claim in prose is not. After landing it, run only `pnpm check` and the tests covering what you changed yourself; the lander runs everything on the merged result.
+- An idle or finished worker proves nothing. Read its diff, check its citations, and read its last full test run in its transcript (`ultimate.entries(id)`): a recorded exit code is evidence, a claim in prose is not. After landing it, run `pnpm check` and the tests covering what you changed yourself; the lander reruns only its configured checks on the merged result.
 - A `watchdog.failure` card names a child's failed run and last step; temporary errors already got one retry. Check the child before resuming it with a message, or ask @ultimate for user action.
 - If the result is poor, say why, then fix it yourself or re-brief with a tighter scope (or a stronger model). Don't accept it as is.
 - You alone declare the work complete.
@@ -68,7 +68,7 @@ Before ending a turn while children run, name the ones you wait for; their answe
 
 Never end a run with work left unless a child, the lander or a reply will wake you: nothing else does. Send progress as a one-way `message` to @ultimate (reply: false) and keep working; your final answer is for when you are done or blocked.
 
-For review, start one `reviewer` with the immutable `base..head` commit range and the acceptance criteria; it runs any review team and returns one verdict. Verify its findings yourself. The lander runs every check on the merged result. Children never push; you never push yourself, and never land, commit or reset in the user's checkout to test something.
+For review, start one `reviewer` with the immutable `base..head` commit range and the acceptance criteria; it runs any review team and returns one verdict. Verify its findings yourself. The lander reruns every configured check on the merged result. Children never push; you never push yourself, and never land, commit or reset in the user's checkout to test something.
 
 ## Talking to @ultimate and the user
 
