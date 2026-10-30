@@ -45,9 +45,10 @@ Actions (`refs.ts`):
   An untracked symlink shows as a new file whose one line is its target (one with a path git would quote or a
   multi-line target is listed as `symlink`, without hunks); a file that became a symlink or stopped
   being one is listed as `typeChanged`, without hunks.
-- `ranges` → fresh immutable `<merge-base SHA>...<HEAD SHA>` specs for every ready workspace, plus uncommitted, the
-  last ten landings (`workspaces.landed` events) and the last fifteen commits. Workspace ranges are resolved from each
-  checkout's actual path and target whenever the selector opens, and carry their owning `conversation`.
+- `ranges` → fresh immutable `<merge-base SHA>...<HEAD SHA>` specs for every ready workspace, with each branch's local
+  commits nested below it, plus uncommitted, the last ten landings (`workspaces.landed` events) and the last fifteen
+  project-checkout commits. Workspace ranges and commits are resolved from each checkout's actual path and target
+  whenever the selector opens, and carry their owning `conversation`.
 - `recipient { spec }` → `{ conversation }`: a `branch:` spec's worktree owner, a landing range's submitter (by its
   tip in `workspaces.landed`), a commit's `Ultimate-Conversation` trailer, else the primary agent.
 - `send { conversation, spec, workspace?, comments, note? }` (user only) → `{ conversation }`. At most 50 comments, each text up

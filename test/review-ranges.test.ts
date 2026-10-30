@@ -62,7 +62,7 @@ it('lists every ready workspace by immutable range and reviews it in its own rep
     const branches = response.data.result.filter(
       (range: { group: string }) => range.group === 'Branches',
     )
-    expect(branches).toHaveLength(2)
+    expect(branches).toHaveLength(4)
     for (const { id, workspace } of [first, second]) {
       const head = await git(workspace.path, 'rev-parse', 'HEAD')
       const base = await git(workspace.path, 'merge-base', workspace.target, head)
@@ -74,10 +74,20 @@ it('lists every ready workspace by immutable range and reviews it in its own rep
         conversation: id,
         workspace: id,
       })
+      expect(branches).toContainEqual({
+        spec: head,
+        group: 'Branches',
+        label: id === first.id ? 'project change' : 'other change',
+        detail: expect.stringContaining(head.slice(0, 7)),
+        conversation: id,
+        workspace: id,
+        nested: true,
+      })
     }
 
     const selected = branches.find(
-      (range: { conversation?: number }) => range.conversation === second.id,
+      (range: { conversation?: number; spec: string }) =>
+        range.conversation === second.id && range.spec.includes('...'),
     )
     const diff = await post(server, '/api/extensions/review/actions/diff', {
       args: { spec: selected.spec, conversation: second.id },

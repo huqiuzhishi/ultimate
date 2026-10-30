@@ -52,7 +52,7 @@ async function ranges(host: ExtensionHost): Promise<ReviewRange[]> {
     Promise.all(
       items
         .filter(([, item]) => item.state === 'ready')
-        .map(async ([key, item]): Promise<ReviewRange> => {
+        .map(async ([key, item]): Promise<ReviewRange[]> => {
           const id = Number(key)
           const head = await git(item.path, 'rev-parse', '--verify', 'HEAD^{commit}')
           const targetSha = await git(item.path, 'rev-parse', '--verify', `${item.target}^{commit}`)
@@ -60,7 +60,7 @@ async function ranges(host: ExtensionHost): Promise<ReviewRange[]> {
             git(item.path, 'merge-base', targetSha, head),
             git(item.path, 'show', '-s', '--format=%ct', head),
           ])
-          return {
+          const branch: ReviewRange = {
             spec: `${base}...${head}`,
             group: 'Branches',
             label: titles.get(id) ?? `#${id}`,
@@ -68,6 +68,30 @@ async function ranges(host: ExtensionHost): Promise<ReviewRange[]> {
             conversation: id,
             workspace: id,
           }
+          const branchCommits = await git(
+            item.path,
+            'log',
+            '--format=%H%x09%ct%x09%s',
+            `${base}..${head}`,
+          )
+          return [
+            branch,
+            ...branchCommits
+              .split('\n')
+              .filter(Boolean)
+              .map((line): ReviewRange => {
+                const [sha, committed, subject] = line.split('\t') as [string, string, string]
+                return {
+                  spec: sha,
+                  group: 'Branches',
+                  label: subject,
+                  detail: `${sha.slice(0, 7)} · ${ago(Number(committed))}`,
+                  conversation: id,
+                  workspace: id,
+                  nested: true,
+                }
+              }),
+          ]
         }),
     ),
     git(cwd, 'log', '-n', '15', '--format=%H%x09%ct%x09%s').catch(
@@ -78,7 +102,7 @@ async function ranges(host: ExtensionHost): Promise<ReviewRange[]> {
   ])
   const list: ReviewRange[] = [
     { spec: 'uncommitted', group: 'Working tree', label: 'Uncommitted changes' },
-    ...branches,
+    ...branches.flat(),
   ]
   for (const { data, at } of landings)
     list.push({

@@ -127,7 +127,7 @@ function Choice({
 }) {
   return (
     <CommandItem
-      className="gap-2 py-1 text-[12.5px]"
+      className={cn('gap-2 py-1 text-[12.5px]', range.nested && 'pl-5')}
       onSelect={onSelect}
       value={`${range.group}:${range.workspace ?? 'project'}:${range.spec}`}
     >

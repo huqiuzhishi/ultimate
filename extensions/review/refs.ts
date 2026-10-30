@@ -56,8 +56,10 @@ export type ReviewRange = {
   detail?: string
   /** The conversation behind it: a branch's owner, a landing's submitter. */
   conversation?: number
-  /** The ready workspace in which this spec resolves; only workspace branch ranges carry it. */
+  /** The ready workspace in which this spec resolves; workspace branch ranges and their commits carry it. */
   workspace?: number
+  /** A commit belonging to the branch choice immediately above it. */
+  nested?: true
 }
 
 /**
