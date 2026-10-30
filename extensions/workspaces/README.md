@@ -33,8 +33,10 @@ statistics over every checkout, read-only: landing goes through agents. Concludi
 `github` returns `https://github.com/<owner>/<repo>` of the project's `origin`, or null off GitHub; landing cards and
 the root row link commit ranges with it.
 `update-branch` fetches `origin` and merges `origin/<target>` into an idle coordinator worktree, the main checkout used
-by @ultimate, or the lander's detached checkout. Dirty checkouts are refused. The lander is also refused while it runs
-or has queued submissions. A conflicting merge is aborted and reported, leaving the checkout at its previous commit.
+by @ultimate, or the lander's detached checkout. If a PR workflow renamed a coordinator's checked-out branch and the
+recorded branch no longer exists, Ultimate adopts the new registered branch name; switching to another existing branch
+is still refused. Dirty checkouts are refused. The lander is also refused while it runs or has queued submissions. A
+conflicting merge is aborted and reported, leaving the checkout at its previous commit.
 `workspace land` fast-forwards the saved source branch to the clean, verified workspace tip.
 Unrelated dirty files in the source checkout do not block; `git merge --ff-only` refuses only real overlap.
 If the target changed or diverged, update the workspace onto it and verify again; landing never rebases or pushes.

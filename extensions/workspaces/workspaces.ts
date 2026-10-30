@@ -293,7 +293,7 @@ export function workspaces(host: Host) {
     let target: string
     let branch: string | undefined
     if (checkout === 'workspace') {
-      const workspace = index?.items[String(id)]
+      const workspace = await get(id, context)
       if (!workspace || workspace.state !== 'ready')
         throw new Error('Conversation has no ready workspace')
       ;({ path, source, target, branch } = workspace)
@@ -392,8 +392,40 @@ export function workspaces(host: Host) {
           return undefined
     return `The lander is landing #${entry.conversationId}; ask again when it is idle`
   }
-  const get = async (id: ConversationId, context: Context) =>
-    (await host.harness().snapshot(Workspaces, ROOT_CONVERSATION_ID, context))?.items[String(id)]
+  /** Adopt a branch rename made in this registered checkout, such as a PR workflow's new branch name. */
+  async function get(id: ConversationId, context: Context) {
+    const workspace = (await host.harness().snapshot(Workspaces, ROOT_CONVERSATION_ID, context))
+      ?.items[String(id)]
+    if (!workspace || workspace.state !== 'ready') return workspace
+    const current = await git(workspace.path, 'symbolic-ref', '--quiet', '--short', 'HEAD').catch(
+      () => '',
+    )
+    if (!current || current === workspace.branch) return workspace
+    // A branch switch keeps the recorded branch. Only a rename removes it, so do not silently adopt arbitrary work.
+    if (
+      await git(
+        workspace.source,
+        'show-ref',
+        '--quiet',
+        '--verify',
+        `refs/heads/${workspace.branch}`,
+      ).then(
+        () => true,
+        () => false,
+      )
+    )
+      return workspace
+    const registered = (await git(workspace.source, 'worktree', 'list', '--porcelain'))
+      .split('\n\n')
+      .find((entry) => entry.split('\n').includes(`worktree ${workspace.path}`))
+    if (!registered?.split('\n').includes(`branch refs/heads/${current}`)) return workspace
+    const branch = await host.harness().commit(async (tx) => {
+      const saved = (await tx.doc(Workspaces, ROOT_CONVERSATION_ID)).items[String(id)]
+      if (saved.state === 'ready' && saved.branch === workspace.branch) saved.branch = current
+      return saved.branch
+    }, context)
+    return branch === workspace.branch ? workspace : { ...workspace, branch }
+  }
   const Preparation = defineTask<
     { id: ConversationId; reset?: boolean; preserve?: boolean },
     { phase: 'prepare' },

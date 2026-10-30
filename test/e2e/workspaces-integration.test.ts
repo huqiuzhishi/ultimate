@@ -1807,6 +1807,7 @@ it.concurrent('updates main, coordinator and idle lander checkouts from origin',
   await f.service.ready(coordinator, context)
   const workspace = (await f.service.get(coordinator, context))!
   await commit(workspace.path, 'coordinator.txt')
+  await git(workspace.path, 'branch', '-m', 'review/coordinator')
 
   const remote = join(paths.directory, 'remote-update')
   await git(paths.directory, 'clone', '-q', bare, remote)
@@ -1827,6 +1828,15 @@ it.concurrent('updates main, coordinator and idle lander checkouts from origin',
   expect(branch.changed).toBe(true)
   expect(await readFile(join(workspace.path, 'coordinator.txt'), 'utf8')).toBe('coordinator.txt')
   expect(await readFile(join(workspace.path, 'remote.txt'), 'utf8')).toBe('remote.txt')
+  expect((await f.service.get(coordinator, context))!.branch).toBe('review/coordinator')
+
+  await git(workspace.path, 'switch', '-q', '-c', 'accidental-switch')
+  await expect(
+    actions['update-branch']({ id: coordinator, checkout: 'workspace' }, {
+      host: f.host,
+    } as ActionContext),
+  ).rejects.toThrow('Checkout is on accidental-switch, not review/coordinator')
+  await git(workspace.path, 'switch', '-q', 'review/coordinator')
 
   await writeFile(join(workspace.path, 'base.txt'), 'coordinator\n')
   await git(workspace.path, 'commit', '-qam', 'coordinator base')
