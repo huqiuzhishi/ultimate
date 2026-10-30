@@ -56,6 +56,8 @@ export type ReviewRange = {
   detail?: string
   /** The conversation behind it: a branch's owner, a landing's submitter. */
   conversation?: number
+  /** The ready workspace in which this spec resolves; only workspace branch ranges carry it. */
+  workspace?: number
 }
 
 /**

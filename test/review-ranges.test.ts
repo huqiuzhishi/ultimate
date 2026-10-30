@@ -72,6 +72,7 @@ it('lists every ready workspace by immutable range and reviews it in its own rep
         label: 'Same title',
         detail: expect.stringContaining(`#${id}`),
         conversation: id,
+        workspace: id,
       })
     }
 

@@ -604,7 +604,6 @@ export default function ReviewSurface() {
       controls={
         <>
           <Selector
-            conversation={args.conversation}
             onChange={(next, conversation) => {
               setSent(undefined)
               setWorkspace(conversation ?? null)
@@ -612,6 +611,7 @@ export default function ReviewSurface() {
             }}
             spec={spec}
             title={data?.title}
+            workspace={args.conversation}
           />
           {data && totals && (
             <span className="shrink-0 font-mono text-[11.5px] text-muted-foreground">

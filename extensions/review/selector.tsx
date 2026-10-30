@@ -19,12 +19,12 @@ export const shortSpec = (spec: string) => spec.replace(/\b([0-9a-f]{7})[0-9a-f]
 /** The spec on screen as a button; it opens the recent choices to filter, or takes any spec typed in. */
 export function Selector({
   spec,
-  conversation,
+  workspace,
   title,
   onChange,
 }: {
   spec: string
-  conversation?: number
+  workspace?: number
   title?: string
   onChange: (spec: string, conversation?: number) => void
 }) {
@@ -79,7 +79,7 @@ export function Selector({
               <CommandGroup heading="Spec">
                 <CommandItem
                   className="gap-2 py-1 font-mono text-[12px]"
-                  onSelect={() => choose(query.trim(), conversation)}
+                  onSelect={() => choose(query.trim(), workspace)}
                   value={`spec:${query}`}
                 >
                   <CornerDownLeftIcon className="size-3.5" />
@@ -100,9 +100,9 @@ export function Selector({
                 <CommandGroup heading={group}>
                   {items.map((range) => (
                     <Choice
-                      current={range.spec === spec && range.conversation === conversation}
-                      key={`${range.conversation ?? 'project'}:${range.spec}`}
-                      onSelect={() => choose(range.spec, range.conversation)}
+                      current={range.spec === spec && range.workspace === workspace}
+                      key={`${range.group}:${range.workspace ?? 'project'}:${range.spec}`}
+                      onSelect={() => choose(range.spec, range.workspace)}
                       range={range}
                     />
                   ))}
@@ -126,7 +126,11 @@ function Choice({
   onSelect: () => void
 }) {
   return (
-    <CommandItem className="gap-2 py-1 text-[12.5px]" onSelect={onSelect} value={range.spec}>
+    <CommandItem
+      className="gap-2 py-1 text-[12.5px]"
+      onSelect={onSelect}
+      value={`${range.group}:${range.workspace ?? 'project'}:${range.spec}`}
+    >
       <span className={cn('min-w-0 flex-1 truncate', current && 'text-brand')}>{range.label}</span>
       {range.detail && (
         <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{range.detail}</span>

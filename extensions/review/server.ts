@@ -21,14 +21,14 @@ export const ReviewCommentsEntry = defineEntry<ReviewComments>('review.comments'
 const index = (host: ExtensionHost, ctx: Context) =>
   host.harness().snapshot(host.need(WorkspacesApi).doc, ROOT_CONVERSATION_ID, ctx)
 
-/** Conversation `id`'s ready worktree, or the project checkout when no conversation was requested. */
-async function where(host: ExtensionHost, id: unknown) {
-  if (id === undefined) return host.projectRoot
+/** Conversation `id`'s ready checkout, or the project checkout when no conversation was requested. */
+async function reviewCheckout(host: ExtensionHost, id: unknown) {
+  if (id === undefined) return { path: host.projectRoot }
   if (typeof id !== 'number' || !Number.isSafeInteger(id) || id < 1)
     throw new Error('conversation must be a conversation id')
   const workspace = (await index(host, context))?.items[String(id)]
   if (workspace?.state !== 'ready') throw new Error(`Workspace #${id} is not ready`)
-  return workspace.path
+  return { path: workspace.path, target: workspace.target }
 }
 
 /** The branch `branch` lands on: its worktree's target, else the project checkout's branch. */
@@ -66,6 +66,7 @@ async function ranges(host: ExtensionHost): Promise<ReviewRange[]> {
             label: titles.get(id) ?? `#${id}`,
             detail: `#${id} · ${head.slice(0, 7)} · ${ago(Number(at))}`,
             conversation: id,
+            workspace: id,
           }
         }),
     ),
@@ -158,23 +159,15 @@ export const actions = {
     if (typeof input.spec !== 'string') throw new Error('Expected { spec }')
     // `uncommitted:<id>` names a worktree's uncommitted changes: the same diff, run in that checkout.
     const worktree = worktreeOf(input.spec)
+    const selected = await reviewCheckout(host, worktree ?? input.conversation)
     const diff = await reviewDiff(
-      await where(host, worktree ?? input.conversation),
+      selected.path,
       worktree === undefined ? input.spec : 'uncommitted',
-      { target: (branch) => target(host, branch), signal },
+      { target: async (branch) => selected.target ?? target(host, branch), signal },
     )
-    const branch = input.spec.startsWith('branch:')
-      ? input.spec.slice('branch:'.length).trim()
-      : undefined
-    const branchWorktree = branch
-      ? Object.values((await index(host, context))?.items ?? {}).find(
-          (item) => item.branch === branch && item.state === 'ready',
-        )?.path
-      : undefined
-    const resolved = branchWorktree ? { ...diff, cwd: branchWorktree } : diff
     return worktree === undefined
-      ? resolved
-      : { ...resolved, spec: input.spec, title: `Uncommitted changes in #${worktree}` }
+      ? diff
+      : { ...diff, spec: input.spec, title: `Uncommitted changes in #${worktree}` }
   }),
   ranges: implementAction(RangesAction, (_args, { host }) => ranges(host)),
   recipient: implementAction(RecipientAction, async (args, { host }) => {
