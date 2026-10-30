@@ -69,9 +69,14 @@ const line = (value: unknown) =>
 
 /** `input` as a review, or throws naming what is wrong with it. */
 export function checkReview(input: unknown): ReviewComments {
-  if (!record(input)) throw new Error('Expected { spec, comments, note? }')
-  const { spec, comments, note } = input
+  if (!record(input)) throw new Error('Expected { spec, workspace?, comments, note? }')
+  const { spec, workspace, comments, note } = input
   if (typeof spec !== 'string' || !spec.trim()) throw new Error('spec must be a non-empty string')
+  if (
+    workspace !== undefined &&
+    (typeof workspace !== 'number' || !Number.isSafeInteger(workspace) || workspace < 1)
+  )
+    throw new Error('workspace must be a conversation id')
   if (!Array.isArray(comments) || comments.length === 0)
     throw new Error('comments must be a non-empty list')
   if (comments.length > limits.comments)
@@ -96,7 +101,12 @@ export function checkReview(input: unknown): ReviewComments {
       throw new Error(`${at}.excerpt is larger than ${limits.excerptBytes / 1024} KB`)
     return { file, side, start, end, excerpt, text }
   })
-  return { spec, comments: checked, ...(note?.trim() ? { note: note.trim() } : {}) }
+  return {
+    spec,
+    ...(workspace !== undefined ? { workspace } : {}),
+    comments: checked,
+    ...(note?.trim() ? { note: note.trim() } : {}),
+  }
 }
 
 const languages: Record<string, string> = {

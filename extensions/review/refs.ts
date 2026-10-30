@@ -78,10 +78,17 @@ export const RecipientAction = actionRef<{ spec: string }, { conversation: numbe
   'recipient',
 )
 /**
- * User only: `{ conversation, spec, comments, note? }` → one `review.comments` input into `conversation`, which wakes
- * or steers it like a typed message. Throws on an unknown conversation or a review over the limits in comments.ts.
+ * User only: `{ conversation, spec, workspace?, comments, note? }` → one `review.comments` input into `conversation`,
+ * which wakes or steers it like a typed message. `workspace` keeps a cross-repository review resolvable from its card.
+ * Throws on an unknown conversation or a review over the limits in comments.ts.
  */
 export const SendAction = actionRef<
-  { conversation: number; spec: string; comments: ReviewComment[]; note?: string },
+  {
+    conversation: number
+    spec: string
+    workspace?: number
+    comments: ReviewComment[]
+    note?: string
+  },
   { conversation: number }
 >('review', 'send')

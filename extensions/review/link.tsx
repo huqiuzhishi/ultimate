@@ -44,9 +44,9 @@ let requested = fromAddress()
 // The line the surface should scroll to, until it has.
 let target: ReviewTarget | undefined
 
-/** Show the Review surface at `spec` (see `ReviewKind` in refs.ts), scrolled to `at` when given. */
-export function openReview(spec: string, at?: ReviewTarget) {
-  requested = { spec, ...(at && { at }) }
+/** Show the Review surface at `spec` (see `ReviewKind` in refs.ts), scrolled to `at` in `workspace` when given. */
+export function openReview(spec: string, at?: ReviewTarget, workspace?: number) {
+  requested = { spec, ...(workspace !== undefined && { workspace }), ...(at && { at }) }
   notify()
 }
 

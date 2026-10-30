@@ -19,10 +19,12 @@ export const shortSpec = (spec: string) => spec.replace(/\b([0-9a-f]{7})[0-9a-f]
 /** The spec on screen as a button; it opens the recent choices to filter, or takes any spec typed in. */
 export function Selector({
   spec,
+  conversation,
   title,
   onChange,
 }: {
   spec: string
+  conversation?: number
   title?: string
   onChange: (spec: string, conversation?: number) => void
 }) {
@@ -39,10 +41,10 @@ export function Selector({
       )
     : list
   const groups = Map.groupBy(shown, (range) => range.group)
-  const choose = (next: string, conversation?: number) => {
+  const choose = (next: string, owner?: number) => {
     setOpen(false)
     setQuery('')
-    onChange(next, conversation)
+    onChange(next, owner)
   }
   return (
     <Popover onOpenChange={setOpen} open={open}>
@@ -77,7 +79,7 @@ export function Selector({
               <CommandGroup heading="Spec">
                 <CommandItem
                   className="gap-2 py-1 font-mono text-[12px]"
-                  onSelect={() => choose(query.trim())}
+                  onSelect={() => choose(query.trim(), conversation)}
                   value={`spec:${query}`}
                 >
                   <CornerDownLeftIcon className="size-3.5" />
@@ -98,7 +100,7 @@ export function Selector({
                 <CommandGroup heading={group}>
                   {items.map((range) => (
                     <Choice
-                      current={range.spec === spec}
+                      current={range.spec === spec && range.conversation === conversation}
                       key={`${range.conversation ?? 'project'}:${range.spec}`}
                       onSelect={() => choose(range.spec, range.conversation)}
                       range={range}

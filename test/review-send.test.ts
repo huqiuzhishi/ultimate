@@ -41,6 +41,7 @@ it('sends one review input to a conversation, refuses bad reviews, and is user-o
     const sent = await send({
       conversation: target,
       spec: 'abc1234',
+      workspace: 42,
       note: 'Mostly naming.',
       comments: [
         comment(),
@@ -53,7 +54,11 @@ it('sends one review input to a conversation, refuses bad reviews, and is user-o
     const entries = (await conversation.viewState(context)).value.entries
     const reviews = entries.filter((entry) => entry.kind === 'review.comments')
     expect(reviews).toHaveLength(1)
-    expect(reviews[0].data).toMatchObject({ spec: 'abc1234', note: 'Mostly naming.' })
+    expect(reviews[0].data).toMatchObject({
+      spec: 'abc1234',
+      workspace: 42,
+      note: 'Mostly naming.',
+    })
     const message = reviews[0].model?.[0]
     expect(message?.role).toBe('user')
     expect(message && 'content' in message ? message.content : undefined).toBe(

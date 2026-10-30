@@ -22,8 +22,8 @@ that the composer stays open and says it is too long to keep, and a write the se
 `N comments pending · + note · Discard · Send review (N)` and the header has a **to** picker (standing agents and
 recent conversations). Its default comes from `recipient`. Sending posts one `review.comments` input into that
 conversation; the drafts it sent clear (ones added meanwhile stay), and the footer links to it (`Sent to #id`), or
-says why it was not sent. The recipient's transcript shows a review card on the user's side (`card.tsx`), each
-comment's `file:line` chip opening Review there. The model reads `reviewText` (`comments.ts`):
+says why it was not sent. The recipient's transcript shows a review card on the user's side (`card.tsx`), retaining
+its workspace when needed so each comment's `file:line` chip and editor link open the same repository. The model reads `reviewText` (`comments.ts`):
 `Review of \`<spec>\` (N comments)`, the note, then per comment `` `path:start-end`(old|new) ``, a fenced excerpt
 (language from the extension) and the text. Paths and specs are inline code delimited by a backtick run longer than any
 in them, with control characters such as a newline written as`\n`.
@@ -31,7 +31,7 @@ in them, with control characters such as a newline written as`\n`.
 Links: `/?review=<spec>` opens Review at that spec, and the address carries `?review=` while Review is on screen;
 a selected branch range also carries `&workspace=<id>` so the immutable SHAs resolve in the right repository.
 `&file=<path>&line=<n>` (and `&side=old`) scrolls to that line and marks it.
-`openReview(spec, at?)` from `ui.tsx` does the same from code. Review provides the `workspaces.review` point, so the
+`openReview(spec, at?, workspace?)` from `ui.tsx` does the same from code. Review provides the `workspaces.review` point, so the
 landing card, the Activity feed and a root's landed list open a landing's commit count here (DiffsHub stays as a small
 ↗ beside it), and a branch row's menu has **Review changes**. Without review those stay plain DiffsHub links.
 
@@ -50,5 +50,5 @@ Actions (`refs.ts`):
   checkout's actual path and target whenever the selector opens, and carry their owning `conversation`.
 - `recipient { spec }` → `{ conversation }`: a `branch:` spec's worktree owner, a landing range's submitter (by its
   tip in `workspaces.landed`), a commit's `Ultimate-Conversation` trailer, else the primary agent.
-- `send { conversation, spec, comments, note? }` (user only) → `{ conversation }`. At most 50 comments, each text up
+- `send { conversation, spec, workspace?, comments, note? }` (user only) → `{ conversation }`. At most 50 comments, each text up
   to 4,000 characters and excerpt up to 40 lines and 8 KB, to an existing conversation; it steers a busy one.

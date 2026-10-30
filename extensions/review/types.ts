@@ -11,4 +11,10 @@ export type ReviewComment = {
 }
 
 /** What a review carries into the recipient's transcript, as the data of its `review.comments` entry. */
-export type ReviewComments = { spec: string; comments: ReviewComment[]; note?: string }
+export type ReviewComments = {
+  spec: string
+  /** The ready workspace that resolves `spec`, when it is not the project checkout. */
+  workspace?: number
+  comments: ReviewComment[]
+  note?: string
+}

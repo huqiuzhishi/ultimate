@@ -544,6 +544,7 @@ export default function ReviewSurface() {
       const result = await api.action(SendAction, {
         conversation: to,
         spec,
+        ...(args.conversation !== undefined && { workspace: args.conversation }),
         // Drafts keep no excerpt: it is read now from the diff on screen.
         comments: drafts.comments.map(({ id: _id, ...comment }) => ({
           ...comment,
@@ -603,6 +604,7 @@ export default function ReviewSurface() {
       controls={
         <>
           <Selector
+            conversation={args.conversation}
             onChange={(next, conversation) => {
               setSent(undefined)
               setWorkspace(conversation ?? null)
