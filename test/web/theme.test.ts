@@ -72,12 +72,12 @@ function createFakeDocument() {
   }
 }
 
-it('defaults to Ultimate Dark, Inter, and JetBrains Mono when storage is empty', () => {
+it('defaults to Nord and Mononoki Nerd for both fonts when storage is empty', () => {
   const storage = createFakeStorage()
   expect(readStoredAppearance(storage)).toEqual({
-    preset: 'ultimate-dark',
-    uiFont: 'inter',
-    codeFont: 'jetbrains-mono',
+    preset: 'nord',
+    uiFont: 'mononoki',
+    codeFont: 'mononoki',
   })
   storage.setItem(STORAGE_KEYS.polarity, 'light')
   expect(readStoredAppearance(storage).preset).toBe('ultimate-light')

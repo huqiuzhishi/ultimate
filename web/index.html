@@ -87,17 +87,16 @@
             ? rawPreset
             : rawPolarity === 'light'
               ? 'ultimate-light'
-              : 'ultimate-dark'
+              : 'nord'
         const [polarity, color] = themes[preset]
         root.dataset.theme = preset
         root.classList.toggle('dark', polarity === 'dark')
         root.style.setProperty('--theme-preset', preset)
         document.querySelector('meta[name=theme-color]').content = color
         const uiFont = localStorage.getItem('ultimate.font.ui')
-        if (uiFont && uiFonts[uiFont]) root.style.setProperty('--font-sans', uiFonts[uiFont])
+        root.style.setProperty('--font-sans', uiFonts[uiFont] ?? uiFonts.mononoki)
         const codeFont = localStorage.getItem('ultimate.font.code')
-        if (codeFont && codeFonts[codeFont])
-          root.style.setProperty('--font-mono', codeFonts[codeFont])
+        root.style.setProperty('--font-mono', codeFonts[codeFont] ?? codeFonts.mononoki)
       }
     </script>
   </head>

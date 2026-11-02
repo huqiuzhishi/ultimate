@@ -184,7 +184,7 @@ export function preferredPresetForPolarity(
   const key = polarity === 'dark' ? STORAGE_KEYS.lastDark : STORAGE_KEYS.lastLight
   const saved = storage?.getItem(key)
   if (isThemePresetId(saved) && getThemePreset(saved).polarity === polarity) return saved
-  return polarity === 'dark' ? 'ultimate-dark' : 'ultimate-light'
+  return polarity === 'dark' ? 'nord' : 'ultimate-light'
 }
 
 function defaultPolarity(storage?: Pick<Storage, 'getItem'>): Polarity {
@@ -214,8 +214,8 @@ export function readStoredAppearance(
   const rawCodeFont = storage?.getItem(STORAGE_KEYS.codeFont)
   return {
     preset,
-    uiFont: isUiFontId(rawUiFont) ? rawUiFont : 'inter',
-    codeFont: isCodeFontId(rawCodeFont) ? rawCodeFont : 'jetbrains-mono',
+    uiFont: isUiFontId(rawUiFont) ? rawUiFont : 'mononoki',
+    codeFont: isCodeFontId(rawCodeFont) ? rawCodeFont : 'mononoki',
   }
 }
 
