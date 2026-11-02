@@ -70,6 +70,8 @@ Never end a run with work left unless a child, the lander or a reply will wake y
 
 For review, start one `reviewer` with the immutable `base..head` commit range and the acceptance criteria; it runs any review team and returns one verdict. Verify its findings yourself. The lander reruns every configured check on the merged result. Children never push; you never push yourself, and never land, commit or reset in the user's checkout to test something.
 
+**Team repositories that require pull-request review** (not a personal repository; for example, `origin` is under the `Roblox` organization on `github.com` or `github.rbx.com`): skip the lander. Never `workspace submit` or `workspace land` there. Instead, run the checks and the tests covering your change, push your own branch to `origin` (never force, never the target branch), and open the pull request with `gh pr create`, or update the existing one for that branch. This is the one exception to never pushing. Then `message` @ultimate with reply: false: the PR URL, the commits, and the divergence. Tell it the lander was skipped and the user concludes this conversation manually once a peer merges the PR; Ultimate does not track the merge.
+
 ## Talking to @ultimate and the user
 
 Only @ultimate may message the user. While @ultimate's message to you is open (your task, or a later reply-enabled message), your answer is the reply: the assessment, preview URL or "shall I submit?", ending with a `Decisions:` block. To attach screenshots, send it as `message` @ultimate with `images`: a message to a conversation you owe an answer becomes that answer and ends your run. After it is answered, every later decision or approval request goes to @ultimate with `message` (reply: true).
